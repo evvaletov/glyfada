@@ -1,0 +1,76 @@
+{
+  "evaluator": "cosy",
+  "program_file": "ARmultivoltage.fox",
+  "config_file": "ARmultivoltage.fox",
+  "program_directory": "/home/evaletov/paradiseo/gitclone/build/moeo/g4bl/test/",
+  "dependency_files": [
+    "fort.88",
+    "fort.92",
+    "coefR.txt",
+    "coefE.txt",
+    "COSY.bin",
+    "cosy"
+  ],
+  "popSize": 200,
+  "maxGen": 100,
+  "eta_c": 20.0,
+  "sigma": 0.1,
+  "p_change": 1.0,
+  "interactive_mode": true,
+  "parameters": [
+    {
+      "name": "X0(1)",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "X0(2)",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "X0(3)",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "X0(4)",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "X0(5)",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "X0(6)",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "BIASV",
+      "type": "continuous",
+      "min_value": 0.008,
+      "max_value": 0.03
+    },
+    {
+      "name": "v1",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 0.01
+    },
+    {
+      "name": "v5t",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 1.0
+    }
+  ]
+}

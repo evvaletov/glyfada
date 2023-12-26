@@ -1,0 +1,220 @@
+{
+  "evaluator": "g4bl",
+  "source_command": "source ~/.zshenv && source /opt/intel/oneapi/setvars.sh",
+  "program_file": "HiMB-v5-MUH3-TRAug22.g4bl",
+  "program_directory": "/home/evaletov/MUH3/",
+  "dependency_files": [
+    "2021_06_18_capture_solenoid_10th_SINGLE_CENTERED_CL373mm_MP50mm_375Acm2_01.BLFieldMap",
+    "2021_06_18_capture_solenoid_10th_SINGLE_CENTERED_CL589mm_MP50mm_375Acm2_01.BLFieldMap",
+    "feldqsm.dat",
+    "HiMB_rectangular_dipole_28.6deg.BLFieldMap",
+    "HiMB_rectangular_dipole_53.6deg.BLFieldMap",
+    "SSL32.BLFieldMap",
+    "ASS31.BLFieldMap",
+    "surfacemuonbeam_MUH3_TQT_TRAug2022_100x.txt"
+  ],
+  "parameters": [
+    {
+      "name": "quadrupoleCurrentE1",
+      "type": "categorical",
+      "values": [
+        "0.3020798141"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentE2",
+      "type": "categorical",
+      "values": [
+        "-0.4232394165"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentE3",
+      "type": "categorical",
+      "values": [
+        "0.2555427659"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentF1",
+      "type": "categorical",
+      "values": [
+        "0.153653355"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentF2",
+      "type": "categorical",
+      "values": [
+        "-0.4593416864"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentF3",
+      "type": "categorical",
+      "values": [
+        "0.5020222106"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentC1",
+      "type": "categorical",
+      "values": [
+        "0.18681852777178087"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentC2",
+      "type": "categorical",
+      "values": [
+        "-0.06506200138950957"
+      ]
+    },
+    {
+      "name": "quadrupoleCurrentD1",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 1.5,
+      "default_value": 0.3233298566198054
+    },
+    {
+      "name": "quadrupoleCurrentD2",
+      "type": "continuous",
+      "min_value": -1.5,
+      "max_value": 0.0,
+      "default_value": -0.47538074306179134
+    },
+    {
+      "name": "quadrupoleCurrentD3",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 1.5,
+      "default_value": 0.2197592884423056
+    },
+    {
+      "name": "SSL331field",
+      "type": "continuous",
+      "min_value": -0.01,
+      "max_value": 0.01,
+      "default_value": 0.002260221601458938
+    },
+    {
+      "name": "SSL32field",
+      "type": "continuous",
+      "min_value": -0.02,
+      "max_value": 0.02,
+      "default_value": 0.0
+    },
+    {
+      "name": "SSL33field",
+      "type": "continuous",
+      "min_value": -0.01,
+      "max_value": 0.01,
+      "default_value": -0.0009796712174148028
+    },
+    {
+      "name": "bend4FieldCoefficient",
+      "type": "continuous",
+      "min_value": 0.9,
+      "max_value": 1.1,
+      "default_value": 0.9507553956236328
+    },
+    {
+      "name": "FSMUH33xoff",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 40.0,
+      "default_value": 37.11182016035941
+    },
+    {
+      "name": "bend3FieldCoefficient",
+      "type": "categorical",
+      "values": [
+        "0.0"
+      ]
+    },
+    {
+      "name": "dipoleFieldmaps28",
+      "type": "categorical",
+      "values": [
+        "1"
+      ]
+    },
+    {
+      "name": "beyondThirdQuadTuplet",
+      "type": "categorical",
+      "values": [
+        "1"
+      ]
+    },
+    {
+      "name": "production",
+      "type": "categorical",
+      "values": [
+        "2"
+      ]
+    },
+    {
+      "name": "FS",
+      "type": "categorical",
+      "values": [
+        "1"
+      ]
+    },
+    {
+      "name": "FSMUH33diag",
+      "type": "categorical",
+      "values": [
+        "65"
+      ]
+    },
+    {
+      "name": "surfacemuonbeam",
+      "type": "categorical",
+      "values": [
+        "surfacemuonbeam_MUH3_TQT_TRAug2022_100x.txt"
+      ]
+    },
+    {
+      "name": "surfacemuonbeamall",
+      "type": "categorical",
+      "values": [
+        "surfacemuonbeamall_MUH3_TQT_TRAug2022_100x.txt"
+      ]
+    },
+    {
+      "name": "OBJF",
+      "type": "categorical",
+      "values": [
+        "8mmdet_extgrad"
+      ]
+    },
+    {
+      "name": "note",
+      "type": "categorical",
+      "values": [
+        "only_optFS_rc"
+      ]
+    },
+    {
+      "name": "OBJFEvalEvts",
+      "type": "categorical",
+      "values": [
+        "2e5"
+      ]
+    },
+    {
+      "name": "RoundBeamCoeff",
+      "type": "categorical",
+      "values": [
+        "1"
+      ]
+    }
+  ],
+  "popSize": 200,
+  "maxGen": 100,
+  "eta_c": 20.0,
+  "sigma": 0.1,
+  "p_change": 1.0,
+  "interactive_mode": true
+}
