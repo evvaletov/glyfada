@@ -15,13 +15,12 @@ include_directories(
 		/home/evaletov/paradiseo/gitclone/moeo/src/
 		/home/evaletov/paradiseo/gitclone/smp/src/
 		${Boost_INCLUDE_DIRS}
-		${Python3_INCLUDE_DIRS}
 )
 
 link_directories(/home/evaletov/paradiseo/gitclone/build/lib)
 
-add_executable(optimiser optimiser.cpp run_cosy.cpp run_g4bl.h run_g4bl.cpp
-		run_dh.cpp)
+add_executable(optimiser optimiser_homogenous.cpp run_cosy.cpp run_g4bl.h run_g4bl.cpp
+		run_dh.cpp /home/evaletov/paradiseo/gitclone/smp/src//topology/complete.cpp)
 
 target_link_libraries(optimiser
 		PRIVATE
@@ -30,5 +29,4 @@ target_link_libraries(optimiser
 		eoutils
 		pthread
 		${Boost_LIBRARIES}
-		${Python3_LIBRARIES}
 		)

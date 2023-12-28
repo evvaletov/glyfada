@@ -134,7 +134,7 @@ public:
             // Call run_g4beamline or run_cosy with the appropriate arguments
             std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file, dependency_files, parameter_names,
                                                    parameter_values, single_category_parameters);
-            std::cout << results[0] << ", " << results[1] << std::endl;
+            std::cout << results[0] << ", " << results[1] << ", " << results[2] << std::endl;
 
             // Set the objectives based on the results from run_g4beamline or run_cosy
             for (size_t i = 0; i < N_OBJECTIVES; ++i) {
@@ -307,50 +307,103 @@ int main(int argc, char *argv[]) {
 
     // objective functions evaluation
     SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters, program_directory, program_file, config_file, dependency_files);
-
     // crossover and mutation
     //eoQuadCloneOp<System<N_OBJECTIVES, N_TRAITS> > xover;
     eoRealVectorBounds bounds(min_values, max_values);
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
-
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
     eoSBXCrossover<System<N_OBJECTIVES, N_TRAITS>> xover(eta_c);
-
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
     eoNormalVecMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
-
-
-    // generate initial population
     eoRealInitBounded<System<N_OBJECTIVES, N_TRAITS>> init(bounds);
-    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop(POP_SIZE, init);
+    eoGenContinue<System<N_OBJECTIVES, N_TRAITS>> continuator(MAX_GEN);
+    eoSGATransform<System<N_OBJECTIVES, N_TRAITS>> transform(xover, P_CROSS, mutation, P_MUT);
+    Topology<Complete> topo;
+    IslandModel<System<N_OBJECTIVES, N_TRAITS>> model(topo);
 
+
+
+    // ISLAND 1
+    // generate initial population
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop2(POP_SIZE, init);
+    // // Emigration policy
+    // // // Element 1
+    eoPeriodicContinue<System<N_OBJECTIVES, N_TRAITS>> criteria_2(10);
+    eoDetTournamentSelect<System<N_OBJECTIVES, N_TRAITS>> selectOne_2(15);
+    eoSelectNumber<System<N_OBJECTIVES, N_TRAITS>> who_2(selectOne_2, 1);
+    MigPolicy<System<N_OBJECTIVES, N_TRAITS>> migPolicy_2;
+    migPolicy_2.push_back(PolicyElement<System<N_OBJECTIVES, N_TRAITS>>(who_2, criteria_2));
+    // // Integration policy
+    eoPlusReplacement<System<N_OBJECTIVES, N_TRAITS>> intPolicy_2;
     // build NSGA-II
-    moeoNSGAII<System<N_OBJECTIVES, N_TRAITS> > nsgaII(MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+    // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
+    // TODO: learn about C++ templates
+    //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+    Island<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> nsgaII_2(
+            pop2,             // Population
+            intPolicy_2,      // Integration policy
+            migPolicy_2,       // Migration policy
+            continuator,      // Stopping criteria
+            eval,             // Evaluation function
+            transform         // Transformation operator combining crossover and mutation
+    );
+
+    // ISLAND 1
+    // generate initial population
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+    // // Emigration policy
+    // // // Element 1
+    eoPeriodicContinue<System<N_OBJECTIVES, N_TRAITS>> criteria_1(5);
+    eoDetTournamentSelect<System<N_OBJECTIVES, N_TRAITS>> selectOne_1(25);
+    eoSelectNumber<System<N_OBJECTIVES, N_TRAITS>> who_1(selectOne_1, 5);
+    MigPolicy<System<N_OBJECTIVES, N_TRAITS>> migPolicy_1;
+    migPolicy_1.push_back(PolicyElement<System<N_OBJECTIVES, N_TRAITS>>(who_1, criteria_1));
+    // // Integration policy
+    eoPlusReplacement<System<N_OBJECTIVES, N_TRAITS>> intPolicy_1;
+    // build NSGA-II
+    Island<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> nsgaII_1(
+            pop1,             // Population
+            intPolicy_1,      // Integration policy
+            migPolicy_1,       // Migration policy
+            continuator,      // Stopping criteria
+            eval,             // Evaluation function
+            transform         // Transformation operator combining crossover and mutation
+    );
 
     // Create the SMP wrapper for NSGA-II
     //unsigned int workersNb = 4; // Set the desired number of workers
     //paradiseo::smp::MWModel<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> mw(workersNb, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
 
-    // help ?
+    // help
     make_help(parser);
 
     // Start a parallel evaluation on the population
     //mw.evaluate(pop);
     //nsgaII(pop);
     //std::cout << "Initial population :" << std::endl;
-    //pop.sort();
     //std::cout << pop << std::endl;
 
+    model.add(nsgaII_1);
+    model.add(nsgaII_2);
+
+    model();
+
+    pop1.sort();
+    pop2.sort();
+
     // run the algo
-    nsgaII(pop); // serial
+    //nsgaII(pop); // serial
     //mw(pop);
 
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop1a = nsgaII_1.getPop();
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop2a = nsgaII_2.getPop();
     // extract first front of the final population using an moeoArchive (this is the output of nsgaII)
     moeoUnboundedArchive<System<N_OBJECTIVES, N_TRAITS> > arch;
-    arch(pop);
+    cout << "Arhive update 1: " << arch(pop1a) << endl;
+    cout << "Arhive update 2: " << arch(pop2a) << endl;
 
     // printing of the final archive
     cout << "Final Archive" << endl;
