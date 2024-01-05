@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <moeo>
+#include <eo>
 #include <es/eoRealInitBounded.h>
 #include <es/eoRealOp.h>
 #include <es/eoNormalMutation.h>
-#include <mpi/eoMpi.h>
-//#include <mpi.h>
+
+#include <realtypes/moRealBoundaryNeighbor.h>
 
 //#include "run_g4beamline.h"
 #include "run_cosy.h"
@@ -24,19 +25,19 @@
 #include <mutex>
 #include <es/eoSBXcross.h>
 
+#include <realtypes/moRealBoundaryNeighborhood.h>
+#include <realtypes/moRealTypes.h>
+
 using namespace std;
 using namespace paradiseo::smp;
-using namespace eo::mpi;
 
 // Global constants
 constexpr unsigned int N_OBJECTIVES = 3;
 constexpr unsigned int N_TRAITS = 8;
 
-void writeParametersToCsv(std::ofstream &file, const std::map<std::string, double> &parameters,
-                          const std::vector<std::string> &parameter_names,
-                          const std::string &single_category_parameters) {
+void writeParametersToCsv(std::ofstream& file, const std::map<std::string, double>& parameters, const std::vector<std::string>& parameter_names, const std::string& single_category_parameters) {
     // Write parameters to the header of the CSV file
-    for (const auto &[param, value]: parameters) {
+    for (const auto& [param, value] : parameters) {
         file << "# " << param << " = " << value << "\n";
     }
     file << "# " << single_category_parameters << "\n";
@@ -63,19 +64,18 @@ nlohmann::json read_json_file(const std::string &filename) {
 }
 
 typedef std::vector<double> (*EvalFunction)(
-    const std::string &,
-    const std::string &,
-    const std::string &,
-    const std::string &,
-    const std::vector<std::string> &,
-    const std::vector<std::string> &,
-    const std::vector<double> &,
-    const std::string &);
+        const std::string&,
+        const std::string&,
+        const std::string&,
+        const std::string&,
+        const std::vector<std::string>&,
+        const std::vector<std::string>&,
+        const std::vector<double>&,
+        const std::string&);
 
 std::vector<std::string> read_dependency_files(const nlohmann::json &json) {
     std::vector<std::string> dependency_files;
-    if (json.contains("dependency_files") && !json.at("dependency_files").is_null() && json.at("dependency_files").
-        is_array()) {
+    if (json.contains("dependency_files") && !json.at("dependency_files").is_null() && json.at("dependency_files").is_array())  {
         for (const auto &file: json.at("dependency_files")) {
             dependency_files.push_back(file.get<std::string>());
         }
@@ -102,35 +102,30 @@ public:
 
 // objective vector of real values
 template<int N_OBJECTIVES>
-using Sch1ObjectiveVector = moeoRealObjectiveVector<Sch1ObjectiveVectorTraits<N_OBJECTIVES> >;
+using Sch1ObjectiveVector = moeoRealObjectiveVector<Sch1ObjectiveVectorTraits<N_OBJECTIVES>>;
 
 // multi-objective evolving object for the System problem
 template<int N_OBJECTIVES, int N_TRAITS>
-class System : public moeoRealVector<Sch1ObjectiveVector<N_OBJECTIVES> > {
+class System : public moeoRealVector<Sch1ObjectiveVector<N_OBJECTIVES>> {
 public:
-    System() : moeoRealVector<Sch1ObjectiveVector<N_OBJECTIVES> >(N_TRAITS) {
-    }
+    System() : moeoRealVector<Sch1ObjectiveVector<N_OBJECTIVES>>(N_TRAITS) {}
 };
 
 // Global vectors to store all evaluated solutions and their corresponding generations
-std::vector<System<N_OBJECTIVES, N_TRAITS> > allEvaluatedSolutions;
+std::vector<System<N_OBJECTIVES, N_TRAITS>> allEvaluatedSolutions;
 std::mutex mutexAllEvaluated; // A mutex for controlling access to the above vectors
 
 // evaluation of objective functions
 template<int N_OBJECTIVES, int N_TRAITS>
-class SystemEval : public moeoEvalFunc<System<N_OBJECTIVES, N_TRAITS> > {
+class SystemEval : public moeoEvalFunc<System<N_OBJECTIVES, N_TRAITS>> {
 public:
-    SystemEval(EvalFunction evaluator, const std::string &source_command,
-               const std::vector<std::string> &parameter_names,
+    SystemEval(EvalFunction evaluator, const std::string &source_command, const std::vector<std::string> &parameter_names,
                const std::string &single_category_parameters, const std::string &program_directory,
-               const std::string &program_file, const std::string &config_file,
-               const std::vector<std::string> &dependency_files)
-        : evaluator(evaluator), source_command(source_command), parameter_names(parameter_names),
-          single_category_parameters(single_category_parameters),
-          program_directory(program_directory), program_file(program_file), config_file(config_file),
-          dependency_files(
-              const_cast<vector<std::string> &>(dependency_files)) {
-    }
+               const std::string &program_file, const std::string &config_file, const std::vector<std::string> &dependency_files)
+            : evaluator(evaluator), source_command(source_command), parameter_names(parameter_names), single_category_parameters(single_category_parameters),
+            program_directory(program_directory), program_file(program_file), config_file(config_file),
+              dependency_files(
+                      const_cast<vector<std::string> &>(dependency_files)) {}
 
     void operator()(System<N_OBJECTIVES, N_TRAITS> &_sch1) {
         if (_sch1.invalidObjectiveVector()) {
@@ -143,10 +138,9 @@ public:
             }
 
             // Call run_g4beamline or run_cosy with the appropriate arguments
-            std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file,
-                                                    dependency_files, parameter_names,
-                                                    parameter_values, single_category_parameters);
-            std::cout << results[0] << ", " << results[1] << std::endl;
+            std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file, dependency_files, parameter_names,
+                                                   parameter_values, single_category_parameters);
+            std::cout << results[0] << ", " << results[1] << ", " << results[2] << std::endl;
 
             // Set the objectives based on the results from run_g4beamline or run_cosy
             for (size_t i = 0; i < N_OBJECTIVES; ++i) {
@@ -163,6 +157,14 @@ public:
         }
     }
 
+    std::vector<double> evaluate(const std::vector<double>& parameter_values) {
+        // Call the evaluator function with the appropriate arguments
+        std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file, dependency_files, parameter_names, parameter_values, single_category_parameters);
+
+        // Return the results
+        return results;
+    }
+
 private:
     EvalFunction evaluator;
     std::string source_command;
@@ -174,6 +176,35 @@ private:
     std::vector<std::string> &dependency_files;
 };
 
+class MyEvalFunction {
+public:
+    MyEvalFunction(SystemEval<N_OBJECTIVES, N_TRAITS>& eval) : eval(eval) {}
+
+    std::vector<double> operator()(const std::vector<double>& params) {
+        return eval.evaluate(params);
+    }
+
+private:
+    SystemEval<N_OBJECTIVES, N_TRAITS>& eval;
+};
+
+template <class EOT, class FitT = typename EOT::Fitness, class FunctionArg = const EOT&>
+class eoEvalFuncPtrWrapper : public eoEvalFunc<EOT> {
+public:
+    // Constructor that takes a functor
+    eoEvalFuncPtrWrapper(std::function<FitT(FunctionArg)> _func) : func(_func) {}
+
+    // Override the () operator to use the stored functor
+    virtual void operator()(EOT& eo) override {
+        if (eo.invalid()) {
+            eo.fitness(func(eo));
+        }
+    }
+
+private:
+    std::function<FitT(FunctionArg)> func; // Store the functor
+};
+
 // TODO DONE: check if in eoNormalVecMutation the sigma argument scaled by the range: yes
 // TODO: implement hybrid island method
 // TODO: implement MPI parallelization
@@ -182,25 +213,11 @@ private:
 
 // main
 int main(int argc, char *argv[]) {
-    int num_threads = 3; // Set this to the number of threads you want OpenMP to use
-    omp_set_num_threads(num_threads);
+    //int num_threads = 1;  // Set this to the number of threads you want OpenMP to use
+    //omp_set_num_threads(num_threads);
 
-    eo::mpi::Node::init(argc, argv);
-    int rank;
-    rank = Node::comm().rank();
-    cout << "MPI rank: " << rank << endl;
-
-    // Get the current time point
-    auto now = std::chrono::high_resolution_clock::now();
-    // Convert it to a duration since the epoch
-    auto duration = now.time_since_epoch();
-    // Narrow it down to microseconds and convert to an unsigned integer
-    unsigned seed = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-    // Seed the random number generator
-    eo::rng.reseed(seed);
-
-    eoParser parser(argc, argv); // for user-parameter reading
-    eoState state; // to keep all things allocated
+    eoParser parser(argc, argv);  // for user-parameter reading
+    eoState state;                // to keep all things allocated
 
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <config_file_path>\n";
@@ -221,7 +238,7 @@ int main(int argc, char *argv[]) {
     //std::vector<double> max_values = json_data["max_values"].get<std::vector<double>>();
 
     // First, extract the parameters from the JSON data
-    std::vector<nlohmann::json> search_space = json_data["parameters"].get<std::vector<nlohmann::json> >();
+    std::vector<nlohmann::json> search_space = json_data["parameters"].get<std::vector<nlohmann::json>>();
 
     // Create empty vectors to hold the parameter names and their bounds
     std::vector<std::string> parameter_names;
@@ -232,7 +249,7 @@ int main(int argc, char *argv[]) {
     std::string single_category_parameters;
 
     // Iterate through each parameter
-    for (const auto &param: search_space) {
+    for (const auto& param : search_space) {
         // Check the parameter type
         std::string param_type = param["type"].get<std::string>();
 
@@ -241,14 +258,16 @@ int main(int argc, char *argv[]) {
             parameter_names.push_back(param["name"].get<std::string>());
             min_values.push_back(param["min_value"].get<double>());
             max_values.push_back(param["max_value"].get<double>());
-        } else if (param_type == "categorical") {
+        }
+        else if (param_type == "categorical") {
             // If it's a categorical parameter, check how many categories it has
-            std::vector<std::string> categories = param["values"].get<std::vector<std::string> >();
+            std::vector<std::string> categories = param["values"].get<std::vector<std::string>>();
 
             if (categories.size() == 1) {
                 // If it has only one category, add it to the single-category parameters string
                 single_category_parameters += param["name"].get<std::string>() + "=" + categories[0] + " ";
-            } else {
+            }
+            else {
                 // If it has more than one category, output a "not implemented" message and abort
                 std::cerr << "Categorical parameters with more than one category are not implemented." << std::endl;
                 exit(1);
@@ -262,7 +281,7 @@ int main(int argc, char *argv[]) {
     std::vector<std::string> dependency_files = read_dependency_files(json_data);
 
     // parameters
-    //std::cout << "Parameters: " << parameter_names.size() << std::endl;
+    std::cout << "Parameters :" << parameter_names.size() << std::endl;
     assert(N_TRAITS == parameter_names.size());
 
     // Read parameters from JSON file
@@ -315,8 +334,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Config file: " << config_file << "\n";
         std::cout << "Program directory: " << program_directory << "\n";
         for (unsigned i = 0; i < parameter_names.size(); ++i) {
-            std::cout << "Parameter " << parameter_names[i] << ": min = " << min_values[i] << ", max = " << max_values[
-                i] << "\n";
+            std::cout << "Parameter " << parameter_names[i] << ": min = " << min_values[i] << ", max = " << max_values[i] << "\n";
         }
         std::cout << "Single category parameters: " << single_category_parameters << "\n";
 
@@ -326,57 +344,134 @@ int main(int argc, char *argv[]) {
         std::getline(std::cin, input);
         if (input != "yes") {
             std::cout << "Aborted.\n";
-            return 1; // or however you want to handle aborting the program
+            return 1;  // or however you want to handle aborting the program
         }
     }
 
     // objective functions evaluation
-    SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters,
-                                            program_directory, program_file, config_file, dependency_files);
-
+    SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters, program_directory, program_file, config_file, dependency_files);
+    //SystemEvalAdapter<N_OBJECTIVES, N_TRAITS> evalAdapter(eval);
     // crossover and mutation
     //eoQuadCloneOp<System<N_OBJECTIVES, N_TRAITS> > xover;
     eoRealVectorBounds bounds(min_values, max_values);
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
-
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
-    eoSBXCrossover<System<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
-
+    eoSBXCrossover<System<N_OBJECTIVES, N_TRAITS>> xover(eta_c);
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
     eoNormalVecMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
+    eoRealInitBounded<System<N_OBJECTIVES, N_TRAITS>> init(bounds);
+    eoGenContinue<System<N_OBJECTIVES, N_TRAITS>> continuator(MAX_GEN);
+    //moContinuator<Neighbor> continuator_SA;
+    eoSGATransform<System<N_OBJECTIVES, N_TRAITS>> transform(xover, P_CROSS, mutation, P_MUT);
+    Topology<Complete> topo;
+    IslandModel<System<N_OBJECTIVES, N_TRAITS>> model(topo);
 
 
+    //typedef eoMaximizingFitness Fitness;
+    typedef eoReal<Fitness> EOT;
+    typedef eoEvalFuncPtr<EOT,std::vector<double>,const std::vector<double>&> GoalFunc;
+    typedef eoEvalFuncCounter<EOT>  GoalFuncCounter;
+    // Wrap the evaluate method of SystemEval with a lambda function to match GoalFunc signature
+    MyEvalFunction myEvalFunction(eval);
+    GoalFunc mainEval(myEvalFunction);
+    GoalFuncCounter evalFuncCounter(mainEval);
+
+    // number of neighbors in a neighborhood
+    //uint32_t numNeighbors = processFlag<uint32_t>(50, "numneighbors", "Num. of neighbors", 'G',false,LSMENU);
+    //double boundaryRadius = processFlag<double>(0.1,"boundaryradius", "The radious of the neighborhood",'R',false,LSMENU);
+
+    uint32_t numNeighbors = 50;
+    double boundaryRadius = 0.01;
+    double initT = 10.0;
+    double alpha = 0.9;
+    unsigned span = 100;
+    double finalT = 0.01;
+    Neighborhood neighborhood(numNeighbors,boundaryRadius);
+    NeighborEval neighborEval = NeighborEval(evalFuncCounter);
+    moSimpleCoolingSchedule<moSA> cool(10, 0.9, 100, 0.01);
+    moeoUnifiedDominanceBasedLS<Neighbor> LSAlgorithm(neighborhood, mainEval, neighborEval, cool);  // Using the same eval for fullEval and incremental eval
+
+    // ISLAND 1
     // generate initial population
-    eoRealInitBounded<System<N_OBJECTIVES, N_TRAITS> > init(bounds);
-    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop(POP_SIZE, init);
-
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop2(POP_SIZE, init);
+    // // Emigration policy
+    // // // Element 1
+    eoPeriodicContinue<System<N_OBJECTIVES, N_TRAITS>> criteria_2(10);
+    eoDetTournamentSelect<System<N_OBJECTIVES, N_TRAITS>> selectOne_2(15);
+    eoSelectNumber<System<N_OBJECTIVES, N_TRAITS>> who_2(selectOne_2, 1);
+    MigPolicy<System<N_OBJECTIVES, N_TRAITS>> migPolicy_2;
+    migPolicy_2.push_back(PolicyElement<System<N_OBJECTIVES, N_TRAITS>>(who_2, criteria_2));
+    // // Integration policy
+    eoPlusReplacement<System<N_OBJECTIVES, N_TRAITS>> intPolicy_2;
     // build NSGA-II
-    moeoNSGAII<System<N_OBJECTIVES, N_TRAITS> > nsgaII(MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+    // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
+    // TODO: learn about C++ templates
+    //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+    Island<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> nsgaII_2(
+            pop2,             // Population
+            intPolicy_2,      // Integration policy
+            migPolicy_2,       // Migration policy
+            continuator,      // Stopping criteria
+            eval,             // Evaluation function
+            transform         // Transformation operator combining crossover and mutation
+    );
+
+    // ISLAND 1
+    // generate initial population
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+    // // Emigration policy
+    // // // Element 1
+    eoPeriodicContinue<System<N_OBJECTIVES, N_TRAITS>> criteria_1(5);
+    eoDetTournamentSelect<System<N_OBJECTIVES, N_TRAITS>> selectOne_1(25);
+    eoSelectNumber<System<N_OBJECTIVES, N_TRAITS>> who_1(selectOne_1, 5);
+    MigPolicy<System<N_OBJECTIVES, N_TRAITS>> migPolicy_1;
+    migPolicy_1.push_back(PolicyElement<System<N_OBJECTIVES, N_TRAITS>>(who_1, criteria_1));
+    // // Integration policy
+    eoPlusReplacement<System<N_OBJECTIVES, N_TRAITS>> intPolicy_1;
+    // build NSGA-II
+    Island<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> nsgaII_1(
+            pop1,             // Population
+            intPolicy_1,      // Integration policy
+            migPolicy_1,       // Migration policy
+            continuator,      // Stopping criteria
+            eval,             // Evaluation function
+            transform         // Transformation operator combining crossover and mutation
+    );
 
     // Create the SMP wrapper for NSGA-II
     //unsigned int workersNb = 4; // Set the desired number of workers
     //paradiseo::smp::MWModel<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> mw(workersNb, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
 
-    // help ?
+    // help
     make_help(parser);
 
     // Start a parallel evaluation on the population
     //mw.evaluate(pop);
     //nsgaII(pop);
     //std::cout << "Initial population :" << std::endl;
-    //pop.sort();
     //std::cout << pop << std::endl;
 
+    model.add(nsgaII_1);
+    model.add(nsgaII_2);
+
+    model();
+
+    pop1.sort();
+    pop2.sort();
+
     // run the algo
-    nsgaII(pop); // serial
+    //nsgaII(pop); // serial
     //mw(pop);
 
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop1a = nsgaII_1.getPop();
+    eoPop<System<N_OBJECTIVES, N_TRAITS> > pop2a = nsgaII_2.getPop();
     // extract first front of the final population using an moeoArchive (this is the output of nsgaII)
     moeoUnboundedArchive<System<N_OBJECTIVES, N_TRAITS> > arch;
-    arch(pop);
+    cout << "Arhive update 1: " << arch(pop1a) << endl;
+    cout << "Arhive update 2: " << arch(pop2a) << endl;
 
     // printing of the final archive
     cout << "Final Archive" << endl;
@@ -384,22 +479,19 @@ int main(int argc, char *argv[]) {
     cout << endl;
 
     std::map<std::string, double> parameters = {
-        {"popSize", POP_SIZE},
-        {"maxGen", MAX_GEN},
-        {"mutEpsilon", M_EPSILON},
-        {"pCross", P_CROSS},
-        {"pMut", P_MUT},
-        {"eta_c", eta_c},
-        {"sigma", sigma},
-        {"p_change", p_change}
+            {"popSize", POP_SIZE},
+            {"maxGen", MAX_GEN},
+            {"mutEpsilon", M_EPSILON},
+            {"pCross", P_CROSS},
+            {"pMut", P_MUT},
+            {"eta_c", eta_c},
+            {"sigma", sigma},
+            {"p_change", p_change}
     };
 
     // Save final archive to a CSV file
     std::ofstream csv_file;
-    std::ostringstream filenameStream;
-    filenameStream << "pareto_frontier_" << rank << ".csv";
-    std::string filename = filenameStream.str();
-    csv_file.open(filename);
+    csv_file.open("pareto_frontier.csv");
     // Write parameters data to file
     writeParametersToCsv(csv_file, parameters, parameter_names, single_category_parameters);
     for (unsigned i = 0; i < arch.size(); ++i) {
@@ -420,10 +512,7 @@ int main(int argc, char *argv[]) {
 
     // Save all evaluated solutions to a CSV file
     std::ofstream all_solutions_file;
-    std::ostringstream filenameStream2;
-    filenameStream2 << "all_evaluated_solutions_" << rank << ".csv";
-    std::string filename2 = filenameStream2.str();
-    all_solutions_file.open(filename2);
+    all_solutions_file.open("all_evaluated_solutions.csv");
     // Write parameters data to file
     writeParametersToCsv(all_solutions_file, parameters, parameter_names, single_category_parameters);
     for (unsigned i = 0; i < allEvaluatedSolutions.size(); ++i) {

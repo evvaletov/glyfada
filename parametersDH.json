@@ -1,12 +1,12 @@
 {
   "evaluator": "dh",
   "program_file": "model.py",
-  "source_command": "source ~/.zshenv && eval \"$(conda shell.bash hook)\" && conda activate dh060",
+  "source_command": "source ~/.zshrc > /dev/null && eval \"$(conda shell.bash hook)\" && conda activate dh060",
   "config_file": "",
   "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
   "dependency_files": [
   ],
-  "popSize": 32,
+  "popSize": 2,
   "maxGen": 2,
   "eta_c": 20.0,
   "sigma": 0.1,
@@ -14,7 +14,7 @@
   "mutEpsilon": 0.01,
   "pCross": 0.25,
   "pMut": 0.35,
-  "interactive_mode": true,
+  "interactive_mode": false,
   "parameters": [
     {
       "name": "B50",

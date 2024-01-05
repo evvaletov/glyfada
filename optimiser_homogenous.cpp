@@ -22,6 +22,8 @@
 #include <mutex>
 #include <es/eoSBXcross.h>
 
+#include <realtypes/moRealBoundaryNeighbor.h>
+
 using namespace std;
 using namespace paradiseo::smp;
 
