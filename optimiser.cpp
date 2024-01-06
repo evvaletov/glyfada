@@ -20,13 +20,18 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <iostream>
-#include <fstream>
 #include <mutex>
 #include <es/eoSBXcross.h>
+
+#include <cctype>
+
+#include <algorithm>
+#include <filesystem>
 
 using namespace std;
 using namespace paradiseo::smp;
 using namespace eo::mpi;
+namespace fs = std::filesystem;
 
 // Global constants
 constexpr unsigned int N_OBJECTIVES = 3;
@@ -180,6 +185,45 @@ private:
 // TODO: track statistics for the quality and speed of optimization
 // TODO: implement hyperparameter optimization
 
+bool isNumber(const std::string& str) {
+    return !str.empty() && str.find_first_not_of("-.0123456789") == std::string::npos;
+}
+
+std::string trim(const std::string& str) {
+    size_t first = str.find_first_not_of(' ');
+    if (first == std::string::npos)
+        return "";
+    size_t last = str.find_last_not_of(' ');
+    return str.substr(first, (last - first + 1));
+}
+
+std::vector<std::string> parseArguments(const std::string& s) {
+    std::vector<std::string> arguments;
+    bool inParentheses = false;
+    std::string currentArg;
+
+    for (char c : s) {
+        if (c == '(') {
+            inParentheses = true;
+            currentArg += c;
+        } else if (c == ')') {
+            inParentheses = false;
+            currentArg += c;
+        } else if (c == ',' && !inParentheses) {
+            arguments.push_back(currentArg);
+            currentArg.clear();
+        } else {
+            currentArg += c;
+        }
+    }
+
+    if (!currentArg.empty()) {
+        arguments.push_back(currentArg);
+    }
+
+    return arguments;
+}
+
 // main
 int main(int argc, char *argv[]) {
     int num_threads = 3; // Set this to the number of threads you want OpenMP to use
@@ -212,6 +256,52 @@ int main(int argc, char *argv[]) {
     //std::string json_filename = "parameterslbnl.json";
     nlohmann::json json_data = read_json_file(config_filename);
 
+    std::string program_file = json_data["program_file"].get<std::string>();
+    std::string config_file = json_data["config_file"].get<std::string>();
+    std::string program_directory = "current_working_directory";
+    if (auto it = json_data.find("program_directory"); it != json_data.end() && it->is_string()) {
+        program_directory = it->get<std::string>();
+    } else {
+        program_directory = fs::current_path().string();
+    }
+    std::vector<std::string> dependency_files = read_dependency_files(json_data);
+
+    // parameters
+    //std::cout << "Parameters: " << parameter_names.size() << std::endl;
+
+    // Read parameters from JSON file
+    unsigned int POP_SIZE = json_data.value("popSize", 200);
+    unsigned int MAX_GEN = json_data.value("maxGen", 50);
+    double M_EPSILON = json_data.value("mutEpsilon", 0.01);
+    double P_CROSS = json_data.value("pCross", 0.25);
+    double P_MUT = json_data.value("pMut", 0.35);
+    double eta_c = json_data.value("eta_c", 30.0);
+    double sigma = json_data.value("sigma", 0.1);
+    double p_change = json_data.value("p_change", 1.0);
+    std::string evaluator = json_data.value("evaluator", "cosy");
+    std::string source_command = json_data.value("source_command", "");
+
+    // Initialize default values
+    std::string dh_model_filename = "model.py";
+    bool parse_dh_model = false;
+
+    // Check if json_data has the parameter and set the variables accordingly
+    auto dh_model_param = json_data.find("get_parameters_from_dh_model");
+    if (dh_model_param != json_data.end()) {
+        if (dh_model_param->is_boolean() && dh_model_param->get<bool>()) {
+            parse_dh_model = true;
+        } else if (dh_model_param->is_string()) {
+            dh_model_filename = dh_model_param->get<std::string>();
+            parse_dh_model = true;
+        }
+    }
+
+    fs::path full_dh_model_path = fs::path(program_directory) / dh_model_filename;
+
+    // Now, `dh_model_filename` holds the model filename (default or specified),
+    // and `parse_dh_model` indicates whether to parse the DeepHyper model file.
+
+
     // Print the entire JSON data
     //std::cout << json_data.dump(4) << "\n"; // 4 is for indentation
 
@@ -231,51 +321,125 @@ int main(int argc, char *argv[]) {
     // Create a string to hold the single-category parameters
     std::string single_category_parameters;
 
-    // Iterate through each parameter
-    for (const auto &param: search_space) {
-        // Check the parameter type
-        std::string param_type = param["type"].get<std::string>();
+    if (!parse_dh_model ) {
+        // Iterate through each parameter
+        for (const auto &param: search_space) {
+            // Check the parameter type
+            std::string param_type = param["type"].get<std::string>();
 
-        if (param_type == "continuous") {
-            // If it's a continuous parameter, add its name, min_value, and max_value to the appropriate vectors
-            parameter_names.push_back(param["name"].get<std::string>());
-            min_values.push_back(param["min_value"].get<double>());
-            max_values.push_back(param["max_value"].get<double>());
-        } else if (param_type == "categorical") {
-            // If it's a categorical parameter, check how many categories it has
-            std::vector<std::string> categories = param["values"].get<std::vector<std::string> >();
+            if (param_type == "continuous") {
+                // If it's a continuous parameter, add its name, min_value, and max_value to the appropriate vectors
+                parameter_names.push_back(param["name"].get<std::string>());
+                min_values.push_back(param["min_value"].get<double>());
+                max_values.push_back(param["max_value"].get<double>());
+            } else if (param_type == "categorical") {
+                // If it's a categorical parameter, check how many categories it has
+                std::vector<std::string> categories = param["values"].get<std::vector<std::string> >();
 
-            if (categories.size() == 1) {
-                // If it has only one category, add it to the single-category parameters string
-                single_category_parameters += param["name"].get<std::string>() + "=" + categories[0] + " ";
-            } else {
-                // If it has more than one category, output a "not implemented" message and abort
-                std::cerr << "Categorical parameters with more than one category are not implemented." << std::endl;
-                exit(1);
+                if (categories.size() == 1) {
+                    // If it has only one category, add it to the single-category parameters string
+                    single_category_parameters += param["name"].get<std::string>() + "=" + categories[0] + " ";
+                } else {
+                    // If it has more than one category, output a "not implemented" message and abort
+                    std::cerr << "Categorical parameters with more than one category are not implemented." << std::endl;
+                    exit(1);
+                }
             }
         }
+
+    } else {
+        // Open the Python file
+        std::ifstream file(full_dh_model_path);
+        if (!file.is_open()) {
+            std::cerr << "Error opening file: " << dh_model_filename << std::endl;
+            return 1;
+        }
+
+        std::string line;
+        while (std::getline(file, line)) {
+            //std::cout << "Reading line: " << line << std::endl; // Debug print
+
+            // Skip comment lines
+            size_t firstChar = line.find_first_not_of(" \t");
+            if (firstChar != std::string::npos && line[firstChar] == '#') {
+                //std::cout << "Skipping comment line." << std::endl;
+                continue;
+            }
+
+            size_t found = line.find("problem.add_hyperparameter");
+            if (found != std::string::npos) {
+                std::string params = line.substr(found + 27); // Extract parameters substring
+                //std::cout << "Parameters substring: " << params << std::endl; // Debug print
+
+                std::vector<std::string> args = parseArguments(params);
+                //std::cout << "Parsed arguments count: " << args.size() << std::endl; // Debug print
+                //for (const auto& arg : args) {
+                //    std::cout << "Argument: " << arg << std::endl; // Debug print
+                //}
+
+                if (args.size() == 2 && args[0].find('[') != std::string::npos) {
+                    // Handle single-category parameters
+                    size_t categoryStart = args[0].find_first_of("[\"");
+                    size_t categoryEnd = args[0].find_last_of("\"]");
+                    if (categoryStart != std::string::npos && categoryEnd != std::string::npos && categoryStart != categoryEnd) {
+                        std::string category = args[0].substr(categoryStart + 1, categoryEnd - categoryStart - 1);
+                        std::string name = args[1].substr(args[1].find_first_of("\"\'") + 1, args[1].find_last_of("\"\'") - args[1].find_first_of("\"\'") - 1);
+                        single_category_parameters += name + "=" + category + " ";
+                    }
+                } else {
+                    if (args.size() < 2 || args.size() > 3) continue; // Ensure correct number of arguments
+
+                    std::string range = args[0];
+                    //std::cout << "Range string: " << range << std::endl; // Debug print
+
+                    size_t openParen = range.find("(");
+                    size_t closeParen = range.find(")");
+                    if (openParen == std::string::npos || closeParen == std::string::npos) continue; // Ensure parentheses are found
+
+                    std::string minMax = range.substr(openParen + 1, closeParen - openParen - 1);
+                    std::istringstream rangeStream(minMax);
+                    std::string min_str_raw, max_str_raw;
+                    std::getline(rangeStream, min_str_raw, ',');
+                    std::getline(rangeStream, max_str_raw);
+
+                    std::string min_str = trim(min_str_raw);
+                    std::string max_str = trim(max_str_raw);
+
+                    //std::cout << "Trimmed Min string: " << min_str << ", Trimmed Max string: " << max_str << std::endl; // Debug print
+
+                    double min_val = isNumber(min_str) ? std::stod(min_str) : 0.0;
+                    double max_val = isNumber(max_str) ? std::stod(max_str) : 0.0;
+                    //std::cout << "Parsed Min: " << min_val << ", Max: " << max_val << std::endl; // Debug print
+
+
+                    min_values.push_back(min_val);
+                    max_values.push_back(max_val);
+
+                    std::string name = args[1];
+                    //std::cout << "Name argument: " << name << std::endl; // Debug print
+
+                    size_t nameStart = name.find_first_of("\"\'");
+                    size_t nameEnd = name.find_last_of("\"\'");
+                    if (nameStart == std::string::npos || nameEnd == std::string::npos || nameStart == nameEnd) continue;
+
+                    parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
+                    //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
+                }
+            }
+        }
+
+        file.close();
     }
 
-    std::string program_file = json_data["program_file"].get<std::string>();
-    std::string config_file = json_data["config_file"].get<std::string>();
-    std::string program_directory = json_data["program_directory"].get<std::string>();
-    std::vector<std::string> dependency_files = read_dependency_files(json_data);
+    for (size_t i = 0; i < parameter_names.size(); ++i) {
+        std::cout << "Parameter: " << parameter_names[i] << ", Min: " << min_values[i] << ", Max: " << max_values[i] << std::endl;
 
-    // parameters
-    //std::cout << "Parameters: " << parameter_names.size() << std::endl;
+    }
+    std::cout << "Single-category parameters: " << single_category_parameters << std::endl;
+
+    return 0;
+
     assert(N_TRAITS == parameter_names.size());
-
-    // Read parameters from JSON file
-    unsigned int POP_SIZE = json_data.value("popSize", 200);
-    unsigned int MAX_GEN = json_data.value("maxGen", 50);
-    double M_EPSILON = json_data.value("mutEpsilon", 0.01);
-    double P_CROSS = json_data.value("pCross", 0.25);
-    double P_MUT = json_data.value("pMut", 0.35);
-    double eta_c = json_data.value("eta_c", 30.0);
-    double sigma = json_data.value("sigma", 0.1);
-    double p_change = json_data.value("p_change", 1.0);
-    std::string evaluator = json_data.value("evaluator", "cosy");
-    std::string source_command = json_data.value("source_command", "");
 
     EvalFunction evalFunc = nullptr;
 

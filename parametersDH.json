@@ -3,6 +3,7 @@
   "program_file": "model.py",
   "source_command": "source ~/.zshrc > /dev/null && eval \"$(conda shell.bash hook)\" && conda activate dh060",
   "config_file": "",
+  "get_parameters_from_dh_model": "model.py",
   "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
   "dependency_files": [
   ],
