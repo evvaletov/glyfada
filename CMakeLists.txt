@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE "STATIC_LIBRARY")
-project(test VERSION 1.0.0 LANGUAGES CXX)
+project(glyfada VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,12 +25,21 @@ add_executable(optimiser run_cosy.cpp run_g4bl.h run_g4bl.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpiNode.h
 		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpiNode.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpi.h
-		optimiser.cpp)
+		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpi.cpp
+		/home/evaletov/paradiseo/gitclone/eo/src/mpi/implMpi.h
+		/home/evaletov/paradiseo/gitclone/eo/src/mpi/implMpi.cpp
+		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialObject.cpp
+		/home/evaletov/paradiseo/gitclone/eo/src/serial/Parser.cpp
+		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialArray.cpp
+		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialString.cpp
+		optimiser.cpp
+		logging.h)
 
 target_include_directories(optimiser PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}
 		${PARADISEO_PATH}/eo/src/
 		${PARADISEO_PATH}/eo/src/mpi
+		${PARADISEO_PATH}/eo/src/serial
 		${PARADISEO_PATH}/mo/src/
 		${PARADISEO_PATH}/moeo/src/
 		${PARADISEO_PATH}/smp/src/
@@ -42,3 +51,4 @@ link_directories(/home/evaletov/paradiseo/gitclone/build/lib
 
 #target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} pthread ${Boost_LIBRARIES} MPI::MPI_CXX )
 target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} MPI::MPI_CXX stdc++fs)
+#target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} MPI::MPI_CXX stdc++fs)

@@ -10,12 +10,13 @@
 #include <codecvt>
 #include <locale>
 #include <json.hpp>
+#include "logging.h"
 
 using json = nlohmann::json;
 
-std::string escapeForShell(const std::string& jsonString) {
+std::string escapeForShell(const std::string &jsonString) {
     std::string escapedString;
-    for (char c : jsonString) {
+    for (char c: jsonString) {
         if (c == '"') {
             escapedString += '\\'; // Add a backslash to escape double quotes
         }
@@ -52,7 +53,7 @@ std::string escapeForShell(const std::string& jsonString) {
  *   If the number of objectives found in the JSON output does not match 'n', it logs an error message
  *   along with the expected and found number of objectives, and the JSON output for further inspection.
  */
-std::vector<double> exec(const std::string& cmd, int n) {
+std::vector<double> exec(const std::string &cmd, int n) {
     std::array<char, 128> buffer;
     std::string result;
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
@@ -71,7 +72,7 @@ std::vector<double> exec(const std::string& cmd, int n) {
 
     // Check if the output starts with "F" indicating a failed evaluation
     if (!result.empty() && result[0] == 'F') {
-        std::cerr << "Warning: Failed evaluation - " << result << std::endl;
+        ERROR_MSG << "Warning: Failed evaluation - " << result << std::endl;
         return std::vector<double>(n, -10000.0);
     }
 
@@ -81,10 +82,10 @@ std::vector<double> exec(const std::string& cmd, int n) {
     try {
         j = json::parse(result);
         parseSuccess = true;
-    } catch (json::parse_error& e) {
-        std::cerr << "JSON Parsing Error: " << e.what() << "\n"
-                  << "Exception id: " << e.id << "\n"
-                  << "Byte position of error: " << e.byte << std::endl;
+    } catch (json::parse_error &e) {
+        ERROR_MSG << "JSON Parsing Error: " << e.what() << "\n"
+                << "Exception id: " << e.id << "\n"
+                << "Byte position of error: " << e.byte << std::endl;
     }
 
     if (parseSuccess && j.is_object()) {
@@ -97,7 +98,7 @@ std::vector<double> exec(const std::string& cmd, int n) {
                 objectiveKeyIgnored = true;
             } else {
                 // Search in sub-structures
-                for (auto& el : j.items()) {
+                for (auto &el: j.items()) {
                     if (el.value().is_object() && el.value().contains(key) && el.value()[key].is_number()) {
                         results.push_back(el.value()[key]);
                         objectiveKeyIgnored = true;
@@ -114,23 +115,24 @@ std::vector<double> exec(const std::string& cmd, int n) {
         if (results.size() == n) {
             return results;
         } else {
-            std::cerr << "Error: Incorrect number of objectives in JSON output.\n"
-                      << "Expected number of objectives: " << n << "\n"
-                      << "Found number of objectives: " << results.size() << "\n"
-                      << "JSON output: " << j.dump(4) << std::endl;  // Pretty print JSON
+            ERROR_MSG << "Error: Incorrect number of objectives in JSON output.\n"
+                    << "Expected number of objectives: " << n << "\n"
+                    << "Found number of objectives: " << results.size() << "\n"
+                    << "JSON output: " << j.dump(4) << std::endl; // Pretty print JSON
             return std::vector<double>(n, -10000.0);
         }
     }
 
     // If output does not meet criteria, return error vector
-    std::cerr << "Invalid output: " << result << std::endl;
+    ERROR_MSG << "Invalid output: " << result << std::endl;
     return std::vector<double>(n, -10000.0);
 }
 
 std::vector<double> run_dh(const std::string &source_command, const std::string &program_directory,
-                             const std::string &program_file, const std::string &config_file,
-                             const std::vector<std::string> &dependency_files, const std::vector<std::string> &parameter_names,
-                             const std::vector<double> &parameter_values,  const std::string &single_category_parameters) {
+                           const std::string &program_file, const std::string &config_file,
+                           const std::vector<std::string> &dependency_files,
+                           const std::vector<std::string> &parameter_names,
+                           const std::vector<double> &parameter_values, const std::string &single_category_parameters) {
     bool debug = false;
 
     // Prepare the parameters as a JSON-like string
@@ -154,7 +156,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
     }
     python_command += "cd " + program_directory + " && ";
     python_command += "python " + program_directory + "/" + program_file +
-                      " \"" + escapedJSONParams + "\"'";
+            " \"" + escapedJSONParams + "\"'";
 
     //std::cout << "Constructed Python command: " << python_command << std::endl;
 
@@ -180,16 +182,21 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
         try {
             results = exec(python_command, 3);
             // Print the entire results vector
-            std::cout << "Results vector: [";
+            std::stringstream msgStream;
+            msgStream << "Results vector: [";
+
             for (size_t i = 0; i < results.size(); ++i) {
-                std::cout << results[i];
+                msgStream << results[i];
                 if (i < results.size() - 1) {
-                    std::cout << ", ";
+                    msgStream << ", ";
                 }
             }
-            std::cout << "]" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "Error executing command: " << e.what() << std::endl;
+
+            msgStream << "]";
+
+            DEBUG_MSG << msgStream.str() << std::endl;
+        } catch (const std::exception &e) {
+            ERROR_MSG << "Error executing command: " << e.what() << std::endl;
             return std::vector<double>(3, -10000.0);
         }
     }
