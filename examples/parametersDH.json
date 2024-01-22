@@ -1,0 +1,77 @@
+{
+  "evaluator": "dh",
+  "program_file": "model.py",
+  "source_command": "source ~/.zshrc > /dev/null && eval \"$(conda shell.bash hook)\" && conda activate dh060",
+  "config_file": "",
+  "get_parameters_from_dh_model": false,
+  "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
+  "dependency_files": [
+  ],
+  "popSize": 2,
+  "maxGen": 2,
+  "eta_c": 20.0,
+  "sigma": 0.1,
+  "p_change": 0.5,
+  "mutEpsilon": 0.01,
+  "pCross": 0.25,
+  "pMut": 0.35,
+  "interactive_mode": false,
+  "parameters": [
+    {
+      "name": "B50",
+      "type": "continuous",
+      "min_value": -3.0,
+      "max_value": 0.0,
+      "default_value": -1.18
+    },
+    {
+      "name": "B51",
+      "type": "continuous",
+      "min_value": -10.0,
+      "max_value": 10.0,
+      "default_value": 0.0
+    },
+    {
+      "name": "B52",
+      "type": "continuous",
+      "min_value": -10.0,
+      "max_value": 10.0,
+      "default_value": 0.0
+    },
+    {
+      "name": "B53",
+      "type": "continuous",
+      "min_value": -10.0,
+      "max_value": 10.0,
+      "default_value": 0.0
+    },
+    {
+      "name": "B90",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 5.0,
+      "default_value": 3.0
+    },
+    {
+      "name": "N6",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 2.0,
+      "default_value": 1.0
+    },
+    {
+      "name": "N7",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 2.0,
+      "default_value": 1.0
+    },
+    {
+      "name": "N8",
+      "type": "continuous",
+      "min_value": 0.0,
+      "max_value": 2.0,
+      "default_value": 1.0
+    }
+  ]
+}
