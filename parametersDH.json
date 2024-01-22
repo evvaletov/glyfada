@@ -7,8 +7,8 @@
   "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
   "dependency_files": [
   ],
-  "popSize": 2,
-  "maxGen": 2,
+  "popSize": 5,
+  "maxGen": 10,
   "eta_c": 20.0,
   "sigma": 0.1,
   "p_change": 0.5,

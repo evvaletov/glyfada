@@ -15,13 +15,16 @@ set(Boost_USE_STATIC_LIBS ON)
 find_package(OpenMP REQUIRED)
 find_package(MPI)
 find_package(Boost 1.84 REQUIRED COMPONENTS filesystem system mpi serialization)
-find_library(EO_LIBRARY eo HINTS /home/evaletov/paradiseo/gitclone/build/lib)
-find_library(EO_UTILS_LIBRARY eoutils HINTS /home/evaletov/paradiseo/gitclone/build/lib)
+find_library(EO_LIBRARY eo HINTS /home/evaletov/paradiseo/gitclone/build/lib REQUIRED)
+find_library(EO_UTILS_LIBRARY eoutils HINTS /home/evaletov/paradiseo/gitclone/build/lib REQUIRED)
 
 set(PARADISEO_PATH "/home/evaletov/paradiseo/gitclone")
 
 add_executable(optimiser run_cosy.cpp run_g4bl.h run_g4bl.cpp
-		run_dh.cpp /home/evaletov/paradiseo/gitclone/smp/src/topology/complete.cpp
+		run_dh.cpp
+		/home/evaletov/paradiseo/gitclone/eo/src/utils/eoParallel.h
+		/home/evaletov/paradiseo/gitclone/eo/src/utils/eoParallel.cpp
+		/home/evaletov/paradiseo/gitclone/smp/src/topology/complete.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpiNode.h
 		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpiNode.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/mpi/eoMpi.h
@@ -32,12 +35,13 @@ add_executable(optimiser run_cosy.cpp run_g4bl.h run_g4bl.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/serial/Parser.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialArray.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialString.cpp
-		optimiser.cpp
+		optimiser_homogenous_2.cpp
 		logging.h)
 
 target_include_directories(optimiser PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}
 		${PARADISEO_PATH}/eo/src/
+		${PARADISEO_PATH}/eo/src/utils
 		${PARADISEO_PATH}/eo/src/mpi
 		${PARADISEO_PATH}/eo/src/serial
 		${PARADISEO_PATH}/mo/src/

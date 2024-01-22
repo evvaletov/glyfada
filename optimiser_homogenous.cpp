@@ -172,8 +172,8 @@ private:
 
 // main
 int main(int argc, char *argv[]) {
-    //int num_threads = 1;  // Set this to the number of threads you want OpenMP to use
-    //omp_set_num_threads(num_threads);
+    int num_threads = 1;  // Set this to the number of threads you want OpenMP to use
+    omp_set_num_threads(num_threads);
 
     eoParser parser(argc, argv);  // for user-parameter reading
     eoState state;                // to keep all things allocated
@@ -352,7 +352,7 @@ int main(int argc, char *argv[]) {
             transform         // Transformation operator combining crossover and mutation
     );
 
-    // ISLAND 1
+    // ISLAND 2
     // generate initial population
     eoPop<System<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
     // // Emigration policy
