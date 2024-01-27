@@ -1,4 +1,6 @@
 {
+  "omp_num_threads": 12,
+  "mode": "multistart",
   "evaluator": "dh",
   "program_file": "model.py",
   "source_command": "source ~/.zshrc > /dev/null && eval \"$(conda shell.bash hook)\" && conda activate dh060",
@@ -7,8 +9,8 @@
   "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
   "dependency_files": [
   ],
-  "popSize": 5,
-  "maxGen": 10,
+  "popSize": 2,
+  "maxGen": 2,
   "eta_c": 20.0,
   "sigma": 0.1,
   "p_change": 0.5,

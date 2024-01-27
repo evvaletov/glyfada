@@ -48,6 +48,11 @@ public:
         return _value;
     }
 
+    // Method to re-initialize the _value member
+    void setValue(const T& newValue) {
+        _value = newValue;
+    }
+
     SerializableBase() : _value() {
         // empty
     }
@@ -182,7 +187,7 @@ public:
           single_category_parameters(single_category_parameters),
           program_directory(program_directory), program_file(program_file), config_file(config_file),
           dependency_files(
-              const_cast<vector<std::string> &>(dependency_files)),islandId(islandId) {
+              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId) {
     }
 
     void operator()(GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> &_vec) override {
@@ -221,7 +226,7 @@ public:
             INFO_MSG << msgStream.str() << std::endl;
 
             DEBUG_MSG << "Current Thread: " << ompThreadNum << ", Total Threads: " << numThreads
-                 << ", Nested Parallelism: " << (isNested ? "Enabled" : "Disabled") << std::endl;
+                    << ", Nested Parallelism: " << (isNested ? "Enabled" : "Disabled") << std::endl;
 
             // Set the objectives based on the results from run_g4beamline or run_cosy
             for (size_t i = 0; i < N_OBJECTIVES; ++i) {
@@ -300,25 +305,11 @@ std::vector<std::string> parseArguments(const std::string &s) {
 
 // main
 int main(int argc, char *argv[]) {
-    int num_threads = 3; // Set this to the number of threads you want OpenMP to use
-    eo::parallel.setNumThreads(num_threads);
-    //omp_set_num_threads( eo::parallel.nthreads() );
-
     eo::mpi::Node::init(argc, argv);
     int rank;
     bmpi::communicator &comm = eo::mpi::Node::comm();
     rank = comm.rank();
     INFO_MSG << "MPI rank: " << rank << endl;
-
-    // Get the maximum number of threads that could be used
-    int max_threads = omp_get_max_threads();
-    INFO_MSG << "OpenMP max threads: " << max_threads << std::endl;
-
-    // Check the number of MPI ranks and maximal OpenMP threads
-    if (comm.size() >= 24 && max_threads < 16) {
-        ERROR_MSG << "Error: Number of MPI ranks is >= 24 and maximal OpenMP threads is below 16." << std::endl;
-        return EXIT_FAILURE;
-    }
 
     // Get the current time point
     auto now = std::chrono::high_resolution_clock::now();
@@ -341,14 +332,15 @@ int main(int argc, char *argv[]) {
         std::string interactiveCmdValue = interactiveParam.value();
         DEBUG_MSG << "Interactive mode parameter from command line: " << interactiveCmdValue << std::endl;
     } else {
-        DEBUG_MSG << "Interactive mode parameter not provided in command line, default value will be used." << std::endl;
+        DEBUG_MSG << "Interactive mode parameter not provided in command line, default value will be used." <<
+                std::endl;
     }
 
     // Define a command-line parameter for configuration file
     eoValueParam<std::string> configFileParam("", "config", "Path to configuration file", 'c', true);
     parser.processParam(configFileParam, "General");
     //make_parallel( parser );
-    make_help( parser) ;
+    make_help(parser);
 
     // Read the configuration file parameter
     std::string config_filename;
@@ -391,6 +383,9 @@ int main(int argc, char *argv[]) {
     bool print_all_results = json_data.value("print_all_results", false);
 
     bool interactive_mode = json_data.value("interactive_mode", false);
+    // modes: multistart, homogeneous
+    std::string mode = json_data.value("mode", "multistart");
+    INFO_MSG << "Operation mode set to: " << mode << std::endl;
 
     // Check if interactive mode parameter was provided in command line
     if (parser.isItThere(interactiveParam)) {
@@ -420,6 +415,20 @@ int main(int argc, char *argv[]) {
     }
 
     fs::path full_dh_model_path = fs::path(program_directory) / dh_model_filename;
+
+    int num_threads = json_data.value("omp_num_threads", 4); // Set this to the number of threads you want OpenMP to use
+    eo::parallel.setNumThreads(num_threads);
+    omp_set_num_threads(eo::parallel.nthreads());
+
+    // Get the maximum number of threads that could be used
+    int max_threads = omp_get_max_threads();
+    INFO_MSG << "OpenMP max threads: " << max_threads << std::endl;
+
+    // Check the number of MPI ranks and maximal OpenMP threads
+    if (comm.size() >= 24 && max_threads < 16) {
+        ERROR_MSG << "Error: Number of MPI ranks is >= 24 and maximal OpenMP threads is below 16." << std::endl;
+        return EXIT_FAILURE;
+    }
 
     // Now, `dh_model_filename` holds the model filename (default or specified),
     // and `parse_dh_model` indicates whether to parse the DeepHyper model file.
@@ -547,8 +556,7 @@ int main(int argc, char *argv[]) {
                     size_t nameStart = name.find_first_of("\"\'");
                     size_t nameEnd = name.find_last_of("\"\'");
                     if (nameStart == std::string::npos || nameEnd == std::string::npos || nameStart == nameEnd)
-                        continue
-                                ;
+                        continue;
 
                     parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
                     //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
@@ -625,107 +633,172 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // objective functions evaluation
-    SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, source_command, parameter_names, single_category_parameters, program_directory, program_file, config_file, dependency_files,1);
-    SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, source_command, parameter_names, single_category_parameters, program_directory, program_file, config_file, dependency_files,2);
     // crossover and mutation
     //eoQuadCloneOp<System<N_OBJECTIVES, N_TRAITS> > xover;
     eoRealVectorBounds bounds(min_values, max_values);
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
-    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> xover(eta_c);
+    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
     eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
-    eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> init(bounds);
-    eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuator(MAX_GEN);
-    eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> transform(xover, P_CROSS, mutation, P_MUT);
-    Topology<Complete> topo;
-    IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> model(topo);
+    eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+    SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop;
+
+    if (mode == "multistart") {
+        // objective functions evaluation
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters,
+                                                program_directory, program_file, config_file, dependency_files);
+        // crossover and mutation
+        //eoQuadCloneOp<System<N_OBJECTIVES, N_TRAITS> > xover;
+        eoRealVectorBounds bounds(min_values, max_values);
+        // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
+        //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
+        //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
+        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
+        //double sigma = 0.1; // You can set the standard deviation here.
+        //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
+        // generate initial population
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
+        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
+        // build NSGA-II
+        moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
+            MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+
+        nsgaII(pop);
+    } else {
+        // objective functions evaluation
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, source_command, parameter_names, single_category_parameters,
+                                                 program_directory, program_file, config_file, dependency_files, 1);
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, source_command, parameter_names, single_category_parameters,
+                                                 program_directory, program_file, config_file, dependency_files, 2);
+
+        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
+        eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
+        Topology<Complete> topo;
+        IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
+
+        // ISLAND 1
+        // generate initial population
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop2(POP_SIZE, init);
+        //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
+        // // Emigration policy
+        // // // Element 1
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_2(1);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_2(15);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_2(selectOne_2, 5);
+        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_2;
+        migPolicy_2.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_2, criteria_2));
+        // // Integration policy
+        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_2;
+        // build NSGA-II
+        // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
+        // TODO: learn about C++ templates
+        //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+        Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_2(
+            pop2, // Population
+            intPolicy_2, // Integration policy
+            migPolicy_2, // Migration policy
+            continuator, // Stopping criteria
+            eval2, // Evaluation function
+            transform // Transformation operator combining crossover and mutation
+        );
+
+        // ISLAND 2
+        // generate initial population
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+        //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop1(pop10);
+        // // Emigration policy
+        // // // Element 1
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(1);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(15);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, 5);
+        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
+        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
+        // // Integration policy
+        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
+        // build NSGA-II
+        Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_1(
+            pop1, // Population
+            intPolicy_1, // Integration policy
+            migPolicy_1, // Migration policy
+            continuator, // Stopping criteria
+            eval1, // Evaluation function
+            transform // Transformation operator combining crossover and mutation
+        );
+
+        // Create the SMP wrapper for NSGA-II
+        //unsigned int workersNb = 4; // Set the desired number of workers
+        //paradiseo::smp::MWModel<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> mw(workersNb, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
 
+        // Start a parallel evaluation on the population
+        //mw.evaluate(pop);
+        //nsgaII(pop);
+        //std::cout << "Initial population :" << std::endl;
+        //std::cout << pop << std::endl;
 
-    // ISLAND 1
-    // generate initial population
-    eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop2(POP_SIZE, init);
-    // // Emigration policy
-    // // // Element 1
-    eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> criteria_2(10);
-    eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> selectOne_2(15);
-    eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> who_2(selectOne_2, 1);
-    MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> migPolicy_2;
-    migPolicy_2.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>(who_2, criteria_2));
-    // // Integration policy
-    eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> intPolicy_2;
-    // build NSGA-II
-    // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
-    // TODO: learn about C++ templates
-    //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
-    Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> nsgaII_2(
-            pop2,             // Population
-            intPolicy_2,      // Integration policy
-            migPolicy_2,       // Migration policy
-            continuator,      // Stopping criteria
-            eval2,             // Evaluation function
-            transform         // Transformation operator combining crossover and mutation
-    );
+        model.add(nsgaII_1);
+        model.add(nsgaII_2);
 
-    // ISLAND 2
-    // generate initial population
-    eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
-    // // Emigration policy
-    // // // Element 1
-    eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> criteria_1(5);
-    eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> selectOne_1(25);
-    eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> who_1(selectOne_1, 5);
-    MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> migPolicy_1;
-    migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>(who_1, criteria_1));
-    // // Integration policy
-    eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> intPolicy_1;
-    // build NSGA-II
-    Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> nsgaII_1(
-            pop1,             // Population
-            intPolicy_1,      // Integration policy
-            migPolicy_1,       // Migration policy
-            continuator,      // Stopping criteria
-            eval1,             // Evaluation function
-            transform         // Transformation operator combining crossover and mutation
-    );
+        model();
 
-    // Create the SMP wrapper for NSGA-II
-    //unsigned int workersNb = 4; // Set the desired number of workers
-    //paradiseo::smp::MWModel<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> mw(workersNb, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+        //pop1->sort();
+        //pop2->sort();
 
+        // run the algo
+        //nsgaII(pop); // serial
+        //mw(pop);
 
-    // Start a parallel evaluation on the population
-    //mw.evaluate(pop);
-    //nsgaII(pop);
-    //std::cout << "Initial population :" << std::endl;
-    //std::cout << pop << std::endl;
+        //eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1a(nsgaII_1.getPop());
+        //eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop2a(nsgaII_2.getPop());
+        // extract first front of the final population using an moeoArchive (this is the output of nsgaII)
+        moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+        moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch2;
+        cout << "Arhive update 1: " << arch1(pop1) << endl;
+        //arch1(pop1a);
+        arch1.sortedPrintOn(cout);
+        cout << "Arhive update 2: " << arch2(pop2) << endl;
+        //arch2(pop2a);
+        arch2.sortedPrintOn(cout);
 
-    model.add(nsgaII_1);
-    model.add(nsgaII_2);
+        pop1.append(pop2);
+        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
+    }
 
-    model();
-
-    pop1.sort();
-    pop2.sort();
-
-    // run the algo
-    //nsgaII(pop); // serial
-    //mw(pop);
-
-    eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1a = nsgaII_1.getPop();
-    eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop2a = nsgaII_2.getPop();
-    // extract first front of the final population using an moeoArchive (this is the output of nsgaII)
     moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch;
-    cout << "Arhive update 1: " << arch(pop1a) << endl;
-    cout << "Arhive update 2: " << arch(pop2a) << endl;
 
-    // printing of the final archive
-    cout << "Final Archive" << endl;
-    arch.sortedPrintOn(cout);
+    if (comm.rank() != DEFAULT_MASTER) {
+        // Worker process: Send pop to the master process
+        DEBUG_MSG << "Worker " << comm.rank() << ": Sending population to master." << std::endl;
+        comm.send(DEFAULT_MASTER, eo::mpi::Channel::Messages, pop);
+        DEBUG_MSG << "Worker " << comm.rank() << ": Population sent." << std::endl;
+        //arch(pop);
+    }
+
+    if (comm.rank() == DEFAULT_MASTER) {
+        // Master process: Receive pop from all other processes
+        DEBUG_MSG << "Master: Ready to receive populations from workers." << std::endl;
+        for (int i = 1; i < comm.size(); ++i) {
+            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > popUnpacked0(POP_SIZE, init);
+            SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > popUnpacked(popUnpacked0);
+            DEBUG_MSG << "Master: Waiting to receive population from worker " << i << "." << std::endl;
+            comm.recv(i, eo::mpi::Channel::Messages, popUnpacked);
+            DEBUG_MSG << "Master: Received population from worker " << i << "." << std::endl;
+            arch(popUnpacked); // Process the received population
+        }
+        DEBUG_MSG << "Master: All populations received and processed." << std::endl;
+
+        //eoserial::unpack( o, "pop", popUnpacked);
+        arch(pop);
+        //arch(pop);
+
+        // printing of the final archive
+        cout << "Final Archive" << endl;
+        arch.sortedPrintOn(cout);
         //cout << endl;
 
         std::map<std::string, double> parameters = {
@@ -788,6 +861,7 @@ int main(int argc, char *argv[]) {
             }
             all_solutions_file.close();
         }
+    }
 
     return EXIT_SUCCESS;
 }
