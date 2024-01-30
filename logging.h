@@ -14,7 +14,7 @@
 
 // Compile-time debug level
 #ifndef DEBUG_LEVEL
-#define DEBUG_LEVEL DEBUG_LEVEL_DEBUG
+#define DEBUG_LEVEL DEBUG_LEVEL_INFO
 #endif
 
 // Macros for different levels of logging

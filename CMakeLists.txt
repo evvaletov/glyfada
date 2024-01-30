@@ -19,6 +19,7 @@ find_package(MPI)
 find_package(Boost 1.84 REQUIRED COMPONENTS filesystem system mpi serialization)
 find_library(EO_LIBRARY eo HINTS /home/evaletov/paradiseo/gitclone/build/lib REQUIRED)
 find_library(EO_UTILS_LIBRARY eoutils HINTS /home/evaletov/paradiseo/gitclone/build/lib REQUIRED)
+find_package(LibXml2 REQUIRED)
 
 set(PARADISEO_PATH "/home/evaletov/paradiseo/gitclone")
 
@@ -37,8 +38,16 @@ add_executable(optimiser run_cosy.cpp run_g4bl.h run_g4bl.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/serial/Parser.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialArray.cpp
 		/home/evaletov/paradiseo/gitclone/eo/src/serial/SerialString.cpp
-		optimiser_homogenous_2.cpp
-		logging.h)
+		mpi/SerializableBase.h
+		mpi/schema.cpp
+		mpi/xml_parser.cpp
+		mpi/param.h
+		mpi/param.cpp
+		optimiser.cpp
+		logging.h
+		utils/Utilities.h
+		utils/Utilities.cpp
+)
 
 target_include_directories(optimiser PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}
@@ -50,11 +59,12 @@ target_include_directories(optimiser PRIVATE
 		${PARADISEO_PATH}/moeo/src/
 		${PARADISEO_PATH}/smp/src/
 		${BOOST_ROOT}
+		${LIBXML2_INCLUDE_DIR}
 )
 
 link_directories(/home/evaletov/paradiseo/gitclone/build/lib
 		${BOOST_ROOT}/lib)
 
 #target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} pthread ${Boost_LIBRARIES} MPI::MPI_CXX )
-target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} MPI::MPI_CXX stdc++fs)
+target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} MPI::MPI_CXX stdc++fs)
 #target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} MPI::MPI_CXX stdc++fs)

@@ -4,14 +4,10 @@
 #include <es/eoRealOp.h>
 #include <es/eoNormalMutation.h>
 #include <mpi/eoMpi.h>
-//#include <mpi.h>
 
 #include <utils/eoParser.h>
+#include <cstdlib>
 
-//#include "run_g4beamline.h"
-#include "run_cosy.h"
-#include "run_g4bl.h"
-#include "run_dh.h"
 #include <vector>
 #include <string>
 #include <json.hpp>
@@ -28,91 +24,26 @@
 
 #include <filesystem>
 
-//#include <serial/Utils.h>
-#include <mpi/eoMpi.h>
 #include <serial/eoSerial.h>
 
 #include "logging.h"
+#include "run_cosy.h"
+#include "run_g4bl.h"
+#include "run_dh.h"
+//#include "mpi/SerializableBase.h"
+#include "utils/Utilities.h"
+
+#include "mpi/param.h"
+#include "mpi/schema.h"
 
 using namespace std;
 using namespace paradiseo::smp;
 using namespace eo::mpi;
+//using namespace glyfada_parallel;
 namespace fs = std::filesystem;
 
-template<class T>
-struct SerializableBase : public eoserial::Persistent {
-public:
-    virtual ~SerializableBase() = default;
-
-    operator T &() {
-        return _value;
-    }
-
-    SerializableBase() : _value() {
-        // empty
-    }
-
-    SerializableBase(T base) : _value(base) {
-        // empty
-    }
-
-    void unpack(const eoserial::Object *obj) {
-        eoserial::unpack(*obj, "value", _value);
-    }
-
-    eoserial::Object *pack(void) const {
-        eoserial::Object *obj = new eoserial::Object;
-        obj->add("value", eoserial::make(_value));
-        return obj;
-    }
-
-private:
-    T _value;
-};
-
-// namespace boost {
-//     namespace serialization {
-//         template<class Archive, typename EOT>
-//         void serialize(Archive &ar, eoPop<EOT> &population, const unsigned int version) {
-//             // Serialization and deserialization of eoPop (which is essentially a vector of EOT)
-//             ar & boost::serialization::make_nvp("individuals", population);
-//         }
-//     }
-// }
-
-// Global constants
 constexpr unsigned int N_OBJECTIVES = 3;
 constexpr unsigned int N_TRAITS = 8;
-
-void writeParametersToCsv(std::ofstream &file, const std::map<std::string, double> &parameters,
-                          const std::vector<std::string> &parameter_names,
-                          const std::string &single_category_parameters) {
-    // Write parameters to the header of the CSV file
-    for (const auto &[param, value]: parameters) {
-        file << "# " << param << " = " << value << "\n";
-    }
-    file << "# " << single_category_parameters << "\n";
-
-    // Write parameter names in one last header row
-    file << "# ";
-    for (size_t i = 0; i < parameter_names.size(); ++i) {
-        file << parameter_names[i];
-        if (i != parameter_names.size() - 1) {
-            file << " ";
-        }
-    }
-    file << "\n";
-}
-
-nlohmann::json read_json_file(const std::string &filename) {
-    std::ifstream input_file(filename);
-    if (!input_file.is_open()) {
-        throw std::runtime_error("Could not open file " + filename);
-    }
-    nlohmann::json json_data;
-    input_file >> json_data;
-    return json_data;
-}
 
 typedef std::vector<double> (*EvalFunction)(
     const std::string &,
@@ -123,17 +54,6 @@ typedef std::vector<double> (*EvalFunction)(
     const std::vector<std::string> &,
     const std::vector<double> &,
     const std::string &);
-
-std::vector<std::string> read_dependency_files(const nlohmann::json &json) {
-    std::vector<std::string> dependency_files;
-    if (json.contains("dependency_files") && !json.at("dependency_files").is_null() && json.at("dependency_files").
-        is_array()) {
-        for (const auto &file: json.at("dependency_files")) {
-            dependency_files.push_back(file.get<std::string>());
-        }
-    }
-    return dependency_files;
-}
 
 // the moeoObjectiveVectorTraits
 template<int N_OBJECTIVES>
@@ -176,12 +96,13 @@ public:
                const std::vector<std::string> &parameter_names,
                const std::string &single_category_parameters, const std::string &program_directory,
                const std::string &program_file, const std::string &config_file,
-               const std::vector<std::string> &dependency_files)
+               const std::vector<std::string> &dependency_files,
+               int islandId = -1)
         : evaluator(evaluator), source_command(source_command), parameter_names(parameter_names),
           single_category_parameters(single_category_parameters),
           program_directory(program_directory), program_file(program_file), config_file(config_file),
           dependency_files(
-              const_cast<vector<std::string> &>(dependency_files)) {
+              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId) {
     }
 
     void operator()(GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> &_vec) override {
@@ -200,8 +121,16 @@ public:
                                                     parameter_values, single_category_parameters);
 
             std::stringstream msgStream;
-            msgStream << "Results vector: ";
-
+            int mpiRank;
+            MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
+            int ompThreadNum = omp_get_thread_num();
+            int numThreads = omp_get_num_threads();
+            int isNested = omp_get_nested();
+            if (islandId != -1) {
+                msgStream << "Island " << islandId << ", ";
+            }
+            msgStream << "OMP Thread " << ompThreadNum << ", ";
+            msgStream << "MPI Rank " << mpiRank << ", Results vector: ";
             for (size_t i = 0; i < results.size(); ++i) {
                 msgStream << results[i];
                 if (i < results.size() - 1) {
@@ -209,7 +138,10 @@ public:
                 }
             }
 
-            INFO_MSG << msgStream.str() << std::endl;
+            DEBUG_MSG << msgStream.str() << std::endl;
+
+            DEBUG_MSG << "Current Thread: " << ompThreadNum << ", Total Threads: " << numThreads
+                    << ", Nested Parallelism: " << (isNested ? "Enabled" : "Disabled") << std::endl;
 
             // Set the objectives based on the results from run_g4beamline or run_cosy
             for (size_t i = 0; i < N_OBJECTIVES; ++i) {
@@ -235,6 +167,7 @@ private:
     std::string program_file;
     std::string config_file;
     std::vector<std::string> &dependency_files;
+    int islandId;
 };
 
 // TODO DONE: check if in eoNormalVecMutation the sigma argument scaled by the range: yes
@@ -242,66 +175,37 @@ private:
 // TODO: implement MPI parallelization
 // TODO: track statistics for the quality and speed of optimization
 // TODO: implement hyperparameter optimization
+// TODO: manage loads between islands if running on same MPI rank
+// TODO: implement the possibility of using a different number of OMP threads for each island
+// TODO: merge regular and island-based codes (set mode from parameter file)
 
-bool isNumber(const std::string &str) {
-    return !str.empty() && str.find_first_not_of("-.0123456789") == std::string::npos;
-}
 
-std::string trim(const std::string &str) {
-    size_t first = str.find_first_not_of(' ');
-    if (first == std::string::npos)
-        return "";
-    size_t last = str.find_last_not_of(' ');
-    return str.substr(first, (last - first + 1));
-}
-
-std::vector<std::string> parseArguments(const std::string &s) {
-    std::vector<std::string> arguments;
-    bool inParentheses = false;
-    std::string currentArg;
-
-    for (char c: s) {
-        if (c == '(') {
-            inParentheses = true;
-            currentArg += c;
-        } else if (c == ')') {
-            inParentheses = false;
-            currentArg += c;
-        } else if (c == ',' && !inParentheses) {
-            arguments.push_back(currentArg);
-            currentArg.clear();
-        } else {
-            currentArg += c;
-        }
-    }
-
-    if (!currentArg.empty()) {
-        arguments.push_back(currentArg);
-    }
-
-    return arguments;
-}
-
-// main
 int main(int argc, char *argv[]) {
-    int num_threads = 3; // Set this to the number of threads you want OpenMP to use
-    omp_set_num_threads(num_threads);
-
-    // Get the maximum number of threads that could be used
-    int max_threads = omp_get_max_threads();
-    INFO_MSG << "OpenMP max threads: " << max_threads << std::endl;
-
     eo::mpi::Node::init(argc, argv);
+    //loadRMCParameters (argc, argv);
     int rank;
     bmpi::communicator &comm = eo::mpi::Node::comm();
     rank = comm.rank();
+    int num_mpi_ranks;
+    MPI_Comm_size(MPI_COMM_WORLD, &num_mpi_ranks);
     INFO_MSG << "MPI rank: " << rank << endl;
 
-    // Check the number of MPI ranks and maximal OpenMP threads
-    if (comm.size() >= 24 && max_threads < 16) {
-        ERROR_MSG << "Error: Number of MPI ranks is >= 24 and maximal OpenMP threads is below 16." << std::endl;
-        return EXIT_FAILURE;
-    }
+    /*if (my_node != nullptr) {
+        // Print MPI Rank at the beginning of each line
+        std::cout << "[MPI Rank: " << my_node->rk << "] ";
+
+        // Print information about whether the current node is a scheduler
+        std::cout << "Is Scheduler Node: " << (isScheduleNode() ? "Yes" : "No") << std::endl;
+
+        // Print the runner IDs associated with the current MPI rank
+        for (RUNNER_ID runner_id : my_node->id_run) {
+            std::cout << "[MPI Rank: " << my_node->rk << "] ";
+            std::cout << "Runner ID: " << runner_id << std::endl;
+        }
+    } else {
+        std::cerr << "Error: my_node is not initialized." << std::endl;
+    }*/
+
 
     // Get the current time point
     auto now = std::chrono::high_resolution_clock::now();
@@ -314,7 +218,7 @@ int main(int argc, char *argv[]) {
     //eo::rng.reseed(2 - rank);
 
     eoParser parser(argc, argv, "Glyfada"); // for user-parameter reading
-    eoState state; // to keep all things allocated
+    //eoState state; // to keep all things allocated
 
     eoValueParam<std::string> interactiveParam("", "interactive", "Interactive mode override", 'i', false);
     parser.processParam(interactiveParam, "Execution");
@@ -324,12 +228,15 @@ int main(int argc, char *argv[]) {
         std::string interactiveCmdValue = interactiveParam.value();
         DEBUG_MSG << "Interactive mode parameter from command line: " << interactiveCmdValue << std::endl;
     } else {
-        DEBUG_MSG << "Interactive mode parameter not provided in command line, default value will be used." << std::endl;
+        DEBUG_MSG << "Interactive mode parameter not provided in command line, default value will be used." <<
+                std::endl;
     }
 
     // Define a command-line parameter for configuration file
     eoValueParam<std::string> configFileParam("", "config", "Path to configuration file", 'c', true);
     parser.processParam(configFileParam, "General");
+    //make_parallel( parser );
+    make_help(parser);
 
     // Read the configuration file parameter
     std::string config_filename;
@@ -341,8 +248,6 @@ int main(int argc, char *argv[]) {
     }
 
     // Read the JSON file
-    //std::string json_filename = "/home/evaletov/paradiseo/gitclone/build/moeo/g4bl/test/parametersDH.json";
-    //std::string json_filename = "parameterslbnl.json";
     nlohmann::json json_data = read_json_file(config_filename);
 
     std::string program_file = json_data["program_file"].get<std::string>();
@@ -354,9 +259,6 @@ int main(int argc, char *argv[]) {
         program_directory = fs::current_path().string();
     }
     std::vector<std::string> dependency_files = read_dependency_files(json_data);
-
-    // parameters
-    //std::cout << "Parameters: " << parameter_names.size() << std::endl;
 
     // Read parameters from JSON file
     unsigned int POP_SIZE = json_data.value("popSize", 200);
@@ -372,6 +274,9 @@ int main(int argc, char *argv[]) {
     bool print_all_results = json_data.value("print_all_results", false);
 
     bool interactive_mode = json_data.value("interactive_mode", false);
+    // modes: multistart, homogeneous
+    std::string mode = json_data.value("mode", "multistart");
+    INFO_MSG << "Operation mode set to: " << mode << std::endl;
 
     // Check if interactive mode parameter was provided in command line
     if (parser.isItThere(interactiveParam)) {
@@ -402,17 +307,19 @@ int main(int argc, char *argv[]) {
 
     fs::path full_dh_model_path = fs::path(program_directory) / dh_model_filename;
 
-    // Now, `dh_model_filename` holds the model filename (default or specified),
-    // and `parse_dh_model` indicates whether to parse the DeepHyper model file.
+    int num_threads = json_data.value("omp_num_threads", 4); // Set this to the number of threads you want OpenMP to use
+    eo::parallel.setNumThreads(num_threads);
+    omp_set_num_threads(eo::parallel.nthreads());
 
+    // Get the maximum number of threads that could be used
+    int max_threads = omp_get_max_threads();
+    INFO_MSG << "OpenMP max threads: " << max_threads << std::endl;
 
-    // Print the entire JSON data
-    //std::cout << json_data.dump(4) << "\n"; // 4 is for indentation
-
-    // Extract parameter names and bounds from the JSON file
-    //std::vector<std::string> parameter_names = json_data["parameter_names"].get<std::vector<std::string>>();
-    //std::vector<double> min_values = json_data["min_values"].get<std::vector<double>>();
-    //std::vector<double> max_values = json_data["max_values"].get<std::vector<double>>();
+    // Check the number of MPI ranks and maximal OpenMP threads
+    if (comm.size() >= 24 && max_threads < 16) {
+        ERROR_MSG << "Error: Number of MPI ranks is >= 24 and maximal OpenMP threads is below 16." << std::endl;
+        return EXIT_FAILURE;
+    }
 
     // First, extract the parameters from the JSON data
     std::vector<nlohmann::json> search_space = json_data["parameters"].get<std::vector<nlohmann::json> >();
@@ -528,8 +435,7 @@ int main(int argc, char *argv[]) {
                     size_t nameStart = name.find_first_of("\"\'");
                     size_t nameEnd = name.find_last_of("\"\'");
                     if (nameStart == std::string::npos || nameEnd == std::string::npos || nameStart == nameEnd)
-                        continue
-                                ;
+                        continue;
 
                     parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
                     //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
@@ -551,28 +457,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    EvalFunction evalFunc = nullptr;
-
-    if (evaluator == "cosy") {
-        evalFunc = run_cosy;
-    } else if (evaluator == "g4bl") {
-        evalFunc = run_g4bl;
-    } else if (evaluator == "dh") {
-        evalFunc = run_dh;
+    EvalFunction evalFunc;
+    std::unordered_map<std::string, EvalFunction> evaluatorMap = {
+        {"cosy", run_cosy},
+        {"g4bl", run_g4bl},
+        {"dh", run_dh}
+    };
+    auto evalFuncIter = evaluatorMap.find(evaluator);
+    if (evalFuncIter != evaluatorMap.end()) {
+        evalFunc = evalFuncIter->second;
     } else {
-        // handle error condition
-        ERROR_MSG << "Unknown evaluator: " << evaluator << "\n";
+        // Handle error condition
+        std::cerr << "Unknown evaluator: " << evaluator << "\n";
         return EXIT_FAILURE;
     }
 
-    // Check for interactive mode
-    // Check if the 'interactive_mode' key exists in the JSON data
-    /* if (json_data.contains("interactive_mode")) {
-        bool interactive_mode = json_data["interactive_mode"];
-        std::cout << "Interactive mode: " << (interactive_mode ? "true" : "false") << "\n";
-    } else {
-        std::cout << "'interactive_mode' key not found in JSON data.\n";
-    } */
     INFO_MSG << "Interactive mode: " << (interactive_mode ? "true" : "false") << "\n";
     if (interactive_mode) {
         // Print parameters
@@ -602,66 +501,160 @@ int main(int argc, char *argv[]) {
         std::getline(std::cin, input);
         if (input != "yes") {
             std::cout << "Aborted.\n";
-            return 1; // or however you want to handle aborting the program
+            return EXIT_FAILURE; // or however you want to handle aborting the program
         }
     }
-
-    // objective functions evaluation
-    SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters,
-                                            program_directory, program_file, config_file, dependency_files);
 
     // crossover and mutation
     //eoQuadCloneOp<System<N_OBJECTIVES, N_TRAITS> > xover;
     eoRealVectorBounds bounds(min_values, max_values);
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
-
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
     eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
-
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
     eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
-
-
-    // generate initial population
     eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
-    eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
-    SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop(pop0);
+    SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop;
 
-    // build NSGA-II
-    moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+    if (mode == "multistart") {
+        // objective functions evaluation
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters,
+                                                program_directory, program_file, config_file, dependency_files);
 
-    // Create the SMP wrapper for NSGA-II
-    //unsigned int workersNb = 4; // Set the desired number of workers
-    //paradiseo::smp::MWModel<moeoNSGAII, System<N_OBJECTIVES, N_TRAITS>> mw(workersNb, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+        eoRealVectorBounds bounds(min_values, max_values);
+        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
+        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
+        moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
+            MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+
+        nsgaII(pop);
+    } else {
+        // objective functions evaluation
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, source_command, parameter_names, single_category_parameters,
+                                                 program_directory, program_file, config_file, dependency_files, 1);
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, source_command, parameter_names, single_category_parameters,
+                                                 program_directory, program_file, config_file, dependency_files, 2);
+
+        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
+        eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
+        Topology<Complete> topo;
+        MPI_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
+
+        // ISLAND 1
+        // generate initial population
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+        //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
+        // // Emigration policy
+        // // // Element 1
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(1);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(15);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, 1);
+        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
+        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
+        // // Integration policy
+        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
+        // build NSGA-II
+        // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
+        // TODO: learn about C++ templates
+        //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+        Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_2(
+            pop1, // Population
+            intPolicy_1, // Integration policy
+            migPolicy_1, // Migration policy
+            continuator, // Stopping criteria
+            eval1, // Evaluation function
+            transform // Transformation operator combining crossover and mutation
+        );
+
+        /*// ISLAND 2
+        // generate initial population
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+        //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop1(pop10);
+        // // Emigration policy
+        // // // Element 1
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(1);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(15);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, 5);
+        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
+        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
+        // // Integration policy
+        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
+        // build NSGA-II
+        Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_1(
+            pop1, // Population
+            intPolicy_1, // Integration policy
+            migPolicy_1, // Migration policy
+            continuator, // Stopping criteria
+            eval1, // Evaluation function
+            transform // Transformation operator combining crossover and mutation
+        );*/
+
+        try
+        {
+
+            std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops = IslandModelWrapper<moeoNSGAII,GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,MPI_IslandModel>(num_mpi_ranks, topo, POP_SIZE, init,
+                intPolicy_1, // Integration policy
+                migPolicy_1, // Migration policy
+                HOMOGENEOUS_ISLAND,
+                continuator, // Stopping criteria
+                eval1, // Evaluation function
+                transform);
+
+            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pops[rank]);
+            cout << "Arhive update on MPI rank " << rank << ": " << arch1(pops[rank]) << endl;
+            arch1.sortedPrintOn(cout);
+        }
+        catch(exception& e)
+        {
+            cout << "Exception: " << e.what() << '\n';
+        }
 
 
-    // help ?
-    make_help(parser);
+        //model.add(nsgaII_1);
+        //model.add(nsgaII_2);
 
-    // Start a parallel evaluation on the population
-    //mw.evaluate(pop);
-    //nsgaII(pop);
-    //std::cout << "Initial population :" << std::endl;
-    //pop.sort();
-    //std::cout << pop << std::endl;
+        //model();
+        std::cout << "Model run complete on mpi rank " << rank << std::endl;
 
-    // run the algo
-    nsgaII(pop); // serial
-    //mw(pop);
+        /*if (rank==0) {
+            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+            std::cout << "Archive update island 1 on mpi rank " << rank << std::endl;
+            cout << "Arhive update 1: " << arch1(pop1) << endl;
+            arch1.sortedPrintOn(cout);
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
+        }
 
-    // extract first front of the final population using an moeoArchive (this is the output of nsgaII)
+        if (rank==1) {
+            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch2;
+            std::cout << "Archive update island 2 on mpi rank " << rank << std::endl;
+            cout << "Arhive update 2: " << arch2(pop2) << endl;
+            arch2.sortedPrintOn(cout);
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop2);
+        }*/
+
+        //std::cout << "Joining pops on mpi rank " << rank << std::endl;
+        ///pop1.append(pop2);
+        //pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
+    }
+
     moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch;
 
-    //eoserial::Object o;
-    //SerializableBase<int> test;
-    //std::string str = "Hello, world!";
-    //o["pop"] = eoserial::pack(pop);
-    // First, create an eoPop object
-    //eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> popUnpacked0(POP_SIZE, init);
-    // Now, create a SerializableBase object that wraps the eoPop object
-    //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> popUnpacked(popUnpacked0);
+    std::map<std::string, double> parameters = {
+        {"popSize", POP_SIZE},
+        {"maxGen", MAX_GEN},
+        {"mutEpsilon", M_EPSILON},
+        {"pCross", P_CROSS},
+        {"pMut", P_MUT},
+        {"eta_c", eta_c},
+        {"sigma", sigma},
+        {"p_change", p_change}
+    };
 
 
     if (comm.rank() != DEFAULT_MASTER) {
@@ -694,17 +687,6 @@ int main(int argc, char *argv[]) {
         arch.sortedPrintOn(cout);
         //cout << endl;
 
-        std::map<std::string, double> parameters = {
-            {"popSize", POP_SIZE},
-            {"maxGen", MAX_GEN},
-            {"mutEpsilon", M_EPSILON},
-            {"pCross", P_CROSS},
-            {"pMut", P_MUT},
-            {"eta_c", eta_c},
-            {"sigma", sigma},
-            {"p_change", p_change}
-        };
-
         // Save final archive to a CSV file
         std::ofstream csv_file;
         std::ostringstream filenameStream;
@@ -729,31 +711,32 @@ int main(int argc, char *argv[]) {
         }
         csv_file.close();
 
-        if (print_all_results) {
-            // Save all evaluated solutions to a CSV file
-            std::ofstream all_solutions_file;
-            std::ostringstream filenameStream2;
-            filenameStream2 << "all_evaluated_solutions_" << rank << ".csv";
-            std::string filename2 = filenameStream2.str();
-            all_solutions_file.open(filename2);
-            // Write parameters data to file
-            writeParametersToCsv(all_solutions_file, parameters, parameter_names, single_category_parameters);
-            for (unsigned i = 0; i < allEvaluatedSolutions.size(); ++i) {
-                // Writing objective function values
-                for (unsigned j = 0; j < N_OBJECTIVES; ++j) {
-                    all_solutions_file << allEvaluatedSolutions[i].objectiveVector()[j] << ",";
-                }
-                // Writing solution parameter vectors
-                for (unsigned j = 0; j < N_TRAITS; ++j) {
-                    all_solutions_file << allEvaluatedSolutions[i][j];
-                    if (j != N_TRAITS - 1) {
-                        all_solutions_file << ",";
-                    }
-                }
-                all_solutions_file << "\n"; // Also write the generation number
+    }
+
+    if (print_all_results) {
+        // Save all evaluated solutions to a CSV file
+        std::ofstream all_solutions_file;
+        std::ostringstream filenameStream2;
+        filenameStream2 << "all_evaluated_solutions_" << rank << ".csv";
+        std::string filename2 = filenameStream2.str();
+        all_solutions_file.open(filename2);
+        // Write parameters data to file
+        writeParametersToCsv(all_solutions_file, parameters, parameter_names, single_category_parameters);
+        for (unsigned i = 0; i < allEvaluatedSolutions.size(); ++i) {
+            // Writing objective function values
+            for (unsigned j = 0; j < N_OBJECTIVES; ++j) {
+                all_solutions_file << allEvaluatedSolutions[i].objectiveVector()[j] << ",";
             }
-            all_solutions_file.close();
+            // Writing solution parameter vectors
+            for (unsigned j = 0; j < N_TRAITS; ++j) {
+                all_solutions_file << allEvaluatedSolutions[i][j];
+                if (j != N_TRAITS - 1) {
+                    all_solutions_file << ",";
+                }
+            }
+            all_solutions_file << "\n"; // Also write the generation number
         }
+        all_solutions_file.close();
     }
 
     return EXIT_SUCCESS;
