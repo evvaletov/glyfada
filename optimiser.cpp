@@ -4,6 +4,7 @@
 #include <es/eoRealOp.h>
 #include <es/eoNormalMutation.h>
 #include <mpi/eoMpi.h>
+#include <eoSecondsElapsedTrackGenContinue.h>
 
 #include <utils/eoParser.h>
 #include <cstdlib>
@@ -483,6 +484,8 @@ int main(int argc, char *argv[]) {
         std::cout << "Parameters:\n";
         std::cout << "POP_SIZE: " << POP_SIZE << "\n";
         std::cout << "MAX_GEN: " << MAX_GEN << "\n";
+        std::cout << "MAX_TIME: " << MAX_TIME << "\n";
+        std::cout << "RUN_LIMIT_TYPE: " << RUN_LIMIT_TYPE << "\n";
         std::cout << "M_EPSILON: " << M_EPSILON << "\n";
         std::cout << "P_CROSS: " << P_CROSS << "\n";
         std::cout << "P_MUT: " << P_MUT << "\n";
@@ -551,7 +554,8 @@ int main(int argc, char *argv[]) {
         SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 2);
 
-        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
+        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
+        eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
         eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
         Topology<Complete> topo;
         MPI_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
@@ -559,6 +563,7 @@ int main(int argc, char *argv[]) {
         // ISLAND 1
         // generate initial population
         eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+        std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy
         // // // Element 1
@@ -573,6 +578,7 @@ int main(int argc, char *argv[]) {
         // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
         // TODO: learn about C++ templates
         //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+        /*eoGenContinue continuator = RUN_LIMIT_TYPE == "maxGen" ? continuatorGen : continuatorTime;
         Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_2(
             pop1, // Population
             intPolicy_1, // Integration policy
@@ -580,7 +586,7 @@ int main(int argc, char *argv[]) {
             continuator, // Stopping criteria
             eval1, // Evaluation function
             transform // Transformation operator combining crossover and mutation
-        );
+        );*/
 
         /*// ISLAND 2
         // generate initial population
@@ -608,17 +614,34 @@ int main(int argc, char *argv[]) {
         try
         {
 
-            std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops = IslandModelWrapper<moeoNSGAII,GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,MPI_IslandModel>(num_mpi_ranks, topo, POP_SIZE, init,
-                intPolicy_1, // Integration policy
-                migPolicy_1, // Migration policy
-                HOMOGENEOUS_ISLAND,
-                continuator, // Stopping criteria
-                eval1, // Evaluation function
-                transform);
+            if (RUN_LIMIT_TYPE == "maxGen") {
+                pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
+                    num_mpi_ranks, topo, POP_SIZE, init,
+                    intPolicy_1,  // Integration policy
+                    migPolicy_1,  // Migration policy
+                    HOMOGENEOUS_ISLAND,
+                    continuatorGen,  // Stopping criteria
+                    eval1,  // Evaluation function
+                    transform);
+                cout << "Continuator status on MPI rank " << rank << ": " << continuatorGen << endl;
+            } else if (RUN_LIMIT_TYPE == "maxTime") {
+                pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
+                    num_mpi_ranks, topo, POP_SIZE, init,
+                    intPolicy_1,  // Integration policy
+                    migPolicy_1,  // Migration policy
+                    HOMOGENEOUS_ISLAND,
+                    continuatorTime,  // Stopping criteria
+                    eval1,  // Evaluation function
+                    transform);
+                cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
+            } else {
+                throw std::runtime_error("Invalid RUN_LIMIT_TYPE specified");
+            }
 
             moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
             pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pops[rank]);
             cout << "Arhive update on MPI rank " << rank << ": " << arch1(pops[rank]) << endl;
+
             arch1.sortedPrintOn(cout);
         }
         catch(exception& e)
