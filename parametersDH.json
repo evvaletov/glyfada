@@ -11,12 +11,17 @@
   ],
   "popSize": 5,
   "maxGen": 5,
+  "maxTime": 100,
+  "runLimitType": "maxGen",
   "eta_c": 20.0,
   "sigma": 0.1,
   "p_change": 0.5,
   "mutEpsilon": 0.01,
   "pCross": 0.25,
   "pMut": 0.35,
+  "migrationPeriod": 1,
+  "tournamentSize": 15,
+  "selectionNumber": 1,
   "interactive_mode": false,
   "parameters": [
     {

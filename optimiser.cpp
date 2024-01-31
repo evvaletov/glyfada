@@ -263,15 +263,21 @@ int main(int argc, char *argv[]) {
     // Read parameters from JSON file
     unsigned int POP_SIZE = json_data.value("popSize", 200);
     unsigned int MAX_GEN = json_data.value("maxGen", 50);
+    //TODO: Implement MAX_TIME
+    unsigned int MAX_TIME = json_data.value("maxTime", 100);  // New parameter
+    std::string RUN_LIMIT_TYPE = json_data.value("runLimitType", "maxGen");  // New parameter
+    unsigned int MIGRATION_PERIOD = json_data.value("migrationPeriod", 1);  // New parameter
+    unsigned int TOURNAMENT_SIZE = json_data.value("tournamentSize", 15);  // New parameter
+    unsigned int SELECTION_NUMBER = json_data.value("selectionNumber", 1);  // New parameter
     double M_EPSILON = json_data.value("mutEpsilon", 0.01);
     double P_CROSS = json_data.value("pCross", 0.25);
     double P_MUT = json_data.value("pMut", 0.35);
-    double eta_c = json_data.value("eta_c", 30.0);
-    double sigma = json_data.value("sigma", 0.1);
-    double p_change = json_data.value("p_change", 1.0);
-    std::string evaluator = json_data.value("evaluator", "cosy");
-    std::string source_command = json_data.value("source_command", "");
-    bool print_all_results = json_data.value("print_all_results", false);
+    double ETA_C = json_data.value("eta_c", 30.0);
+    double SIGMA = json_data.value("sigma", 0.1);
+    double P_CHANGE = json_data.value("p_change", 1.0);
+    std::string EVALUATOR = json_data.value("evaluator", "cosy");
+    std::string SOURCE_COMMAND = json_data.value("source_command", "");
+    bool PRINT_ALL_RESULTS = json_data.value("print_all_results", false);
 
     bool interactive_mode = json_data.value("interactive_mode", false);
     // modes: multistart, homogeneous
@@ -463,12 +469,12 @@ int main(int argc, char *argv[]) {
         {"g4bl", run_g4bl},
         {"dh", run_dh}
     };
-    auto evalFuncIter = evaluatorMap.find(evaluator);
+    auto evalFuncIter = evaluatorMap.find(EVALUATOR);
     if (evalFuncIter != evaluatorMap.end()) {
         evalFunc = evalFuncIter->second;
     } else {
         // Handle error condition
-        std::cerr << "Unknown evaluator: " << evaluator << "\n";
+        std::cerr << "Unknown evaluator: " << EVALUATOR << "\n";
         return EXIT_FAILURE;
     }
 
@@ -481,13 +487,16 @@ int main(int argc, char *argv[]) {
         std::cout << "M_EPSILON: " << M_EPSILON << "\n";
         std::cout << "P_CROSS: " << P_CROSS << "\n";
         std::cout << "P_MUT: " << P_MUT << "\n";
-        std::cout << "Evaluator: " << evaluator << "\n";
-        std::cout << "Source command: " << source_command << "\n";
+        std::cout << "ETA_C: " << ETA_C << "\n";
+        std::cout << "SIGMA: " << SIGMA << "\n";
+        std::cout << "P_CHANGE: " << P_CHANGE << "\n";
+        std::cout << "Evaluator: " << EVALUATOR << "\n";
+        std::cout << "Source command: " << SOURCE_COMMAND << "\n";
         std::cout << "Program file: " << program_file << "\n";
         std::cout << "Config file: " << config_file << "\n";
         std::cout << "Parse DeepHyper model: " << parse_dh_model << "\n";
         if (parse_dh_model) std::cout << "DeepHyper model filename: " << dh_model_filename << "\n";
-        std::cout << "Print all results: " << print_all_results << "\n";
+        std::cout << "Print all results: " << PRINT_ALL_RESULTS << "\n";
         std::cout << "Program directory: " << program_directory << "\n";
         for (unsigned i = 0; i < parameter_names.size(); ++i) {
             std::cout << "Parameter " << parameter_names[i] << ": min = " << min_values[i] << ", max = " << max_values[
@@ -511,21 +520,21 @@ int main(int argc, char *argv[]) {
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
-    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
+    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
-    eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
+    eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
     eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
     SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop;
 
     if (mode == "multistart") {
         // objective functions evaluation
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, source_command, parameter_names, single_category_parameters,
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                 program_directory, program_file, config_file, dependency_files);
 
         eoRealVectorBounds bounds(min_values, max_values);
-        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(eta_c);
-        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, sigma, p_change);
+        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
         eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
         eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
         pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
@@ -535,9 +544,9 @@ int main(int argc, char *argv[]) {
         nsgaII(pop);
     } else {
         // objective functions evaluation
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, source_command, parameter_names, single_category_parameters,
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1);
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, source_command, parameter_names, single_category_parameters,
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 2);
 
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
@@ -551,9 +560,9 @@ int main(int argc, char *argv[]) {
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy
         // // // Element 1
-        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(1);
-        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(15);
-        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, 1);
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(MIGRATION_PERIOD);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(TOURNAMENT_SIZE);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, SELECTION_NUMBER);
         MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
         migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
         // // Integration policy
@@ -651,9 +660,9 @@ int main(int argc, char *argv[]) {
         {"mutEpsilon", M_EPSILON},
         {"pCross", P_CROSS},
         {"pMut", P_MUT},
-        {"eta_c", eta_c},
-        {"sigma", sigma},
-        {"p_change", p_change}
+        {"eta_c", ETA_C},
+        {"sigma", SIGMA},
+        {"p_change", P_CHANGE}
     };
 
 
@@ -713,7 +722,7 @@ int main(int argc, char *argv[]) {
 
     }
 
-    if (print_all_results) {
+    if (PRINT_ALL_RESULTS) {
         // Save all evaluated solutions to a CSV file
         std::ofstream all_solutions_file;
         std::ostringstream filenameStream2;

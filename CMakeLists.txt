@@ -57,6 +57,7 @@ target_include_directories(optimiser PRIVATE
 		${PARADISEO_PATH}/eo/src/serial
 		${PARADISEO_PATH}/mo/src/
 		${PARADISEO_PATH}/moeo/src/
+		${PARADISEO_PATH}/smp/src/topology
 		${PARADISEO_PATH}/smp/src/
 		${BOOST_ROOT}
 		${LIBXML2_INCLUDE_DIR}
