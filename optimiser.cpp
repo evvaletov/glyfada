@@ -252,10 +252,9 @@ int main(int argc, char *argv[]) {
 
     std::string program_file = json_data["program_file"].get<std::string>();
     std::string config_file = json_data["config_file"].get<std::string>();
-    std::string program_directory = "current_working_directory";
-    if (auto it = json_data.find("program_directory"); it != json_data.end() && it->is_string()) {
-        program_directory = it->get<std::string>();
-    } else {
+    std::string program_directory = json_data.value("program_directory", "cwd");
+    // Check if program_directory is set to 'cwd', then get the current working directory
+    if (program_directory == "cwd") {
         program_directory = fs::current_path().string();
     }
     std::vector<std::string> dependency_files = read_dependency_files(json_data);
