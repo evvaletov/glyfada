@@ -490,6 +490,9 @@ int main(int argc, char *argv[]) {
         std::cout << "ETA_C: " << ETA_C << "\n";
         std::cout << "SIGMA: " << SIGMA << "\n";
         std::cout << "P_CHANGE: " << P_CHANGE << "\n";
+        std::cout << "MIGRATION_PERIOD: " << MIGRATION_PERIOD << "\n";
+        std::cout << "TOURNAMENT_SIZE: " << TOURNAMENT_SIZE << "\n";
+        std::cout << "SELECTION_NUMBER: " << SELECTION_NUMBER << "\n";
         std::cout << "Evaluator: " << EVALUATOR << "\n";
         std::cout << "Source command: " << SOURCE_COMMAND << "\n";
         std::cout << "Program file: " << program_file << "\n";
