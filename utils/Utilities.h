@@ -27,4 +27,12 @@ std::string trim(const std::string &str);
 
 std::vector<std::string> parseArguments(const std::string &s);
 
+std::string currentDateTime();
+
+int getCurrentMpiRank();
+
+std::string getCurrentThreadId();
+
+std::string getFilenameSuffix();
+
 #endif //UTILS_H

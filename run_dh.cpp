@@ -10,7 +10,7 @@
 #include <codecvt>
 #include <locale>
 #include <json.hpp>
-#include "logging.h"
+#include "utils/Logging.h"
 
 using json = nlohmann::json;
 

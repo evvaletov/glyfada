@@ -55,9 +55,10 @@ set(SOURCE_FILES
 		mpi/param.h
 		mpi/param.cpp
 		optimiser.cpp
-		logging.h
+		utils/Logging.h
 		utils/Utilities.h
 		utils/Utilities.cpp
+		utils/Logging.cpp
 		# Add any additional source files here...
 )
 

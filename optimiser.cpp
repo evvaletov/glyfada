@@ -27,7 +27,7 @@
 
 #include <serial/eoSerial.h>
 
-#include "logging.h"
+#include "utils/Logging.h"
 #include "run_cosy.h"
 #include "run_g4bl.h"
 #include "run_dh.h"
@@ -322,8 +322,8 @@ int main(int argc, char *argv[]) {
     INFO_MSG << "OpenMP max threads: " << max_threads << std::endl;
 
     // Check the number of MPI ranks and maximal OpenMP threads
-    if (comm.size() >= 24 && max_threads < 16) {
-        ERROR_MSG << "Error: Number of MPI ranks is >= 24 and maximal OpenMP threads is below 16." << std::endl;
+    if (comm.size() >= 24 && max_threads < 12) {
+        ERROR_MSG << "Error: Number of MPI ranks is >= 24 and maximal OpenMP threads is below 12." << std::endl;
         return EXIT_FAILURE;
     }
 
@@ -690,6 +690,7 @@ int main(int argc, char *argv[]) {
         {"p_change", P_CHANGE}
     };
 
+    std::string filenameSuffix = getFilenameSuffix();
 
     if (comm.rank() != DEFAULT_MASTER) {
         // Worker process: Send pop to the master process
@@ -721,12 +722,13 @@ int main(int argc, char *argv[]) {
         arch.sortedPrintOn(cout);
         //cout << endl;
 
-        // Save final archive to a CSV file
+        // Save final archive to a CSV file with the date and time in the filename
         std::ofstream csv_file;
         std::ostringstream filenameStream;
-        filenameStream << "pareto_frontier_" << rank << ".csv";
+        filenameStream << "pareto_frontier_" << filenameSuffix << ".csv";
         std::string filename = filenameStream.str();
         csv_file.open(filename);
+
         // Write parameters data to file
         writeParametersToCsv(csv_file, parameters, parameter_names, single_category_parameters);
         for (unsigned i = 0; i < arch.size(); ++i) {
@@ -751,9 +753,10 @@ int main(int argc, char *argv[]) {
         // Save all evaluated solutions to a CSV file
         std::ofstream all_solutions_file;
         std::ostringstream filenameStream2;
-        filenameStream2 << "all_evaluated_solutions_" << rank << ".csv";
+        filenameStream2 << "all_evaluated_solutions_" << filenameSuffix << ".csv";
         std::string filename2 = filenameStream2.str();
         all_solutions_file.open(filename2);
+
         // Write parameters data to file
         writeParametersToCsv(all_solutions_file, parameters, parameter_names, single_category_parameters);
         for (unsigned i = 0; i < allEvaluatedSolutions.size(); ++i) {
