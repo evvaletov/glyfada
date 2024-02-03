@@ -134,6 +134,8 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
                            const std::vector<std::string> &parameter_names,
                            const std::vector<double> &parameter_values, const std::string &single_category_parameters) {
     bool debug = false;
+    int max_retries = 3; // Maximum number of retries if the file is modified during evaluation
+    int retry_count = 0;
 
     // Prepare the parameters as a JSON-like string
     std::ostringstream params_stream;
@@ -162,6 +164,28 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
 
     // Execute the Python command and get the results
     std::vector<double> results;
+
+    // Function to get the last modification time of the file
+    auto getLastWriteTime = [&](const std::string &path) -> std::filesystem::file_time_type {
+        return std::filesystem::last_write_time(path);
+    };
+
+    std::string fullPath = program_directory + "/" + program_file;
+    std::filesystem::file_time_type lastWriteTimeBefore = getLastWriteTime(fullPath);
+
+
+    // Function to perform the evaluation
+    auto evaluate = [&]() {
+        results = exec(python_command, 3);
+
+        // Check the last modification time after the execution
+        std::filesystem::file_time_type lastWriteTimeAfter = getLastWriteTime(fullPath);
+
+        if (lastWriteTimeBefore != lastWriteTimeAfter) {
+            throw std::runtime_error("Program file was modified during evaluation.");
+        }
+    };
+
     if (debug) {
         std::cout << "Debug mode: " << python_command << std::endl;
         results = exec(python_command, 3);
@@ -180,7 +204,26 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
         exit(0);
     } else {
         try {
-            results = exec(python_command, 3);
+            do {
+                try {
+                    evaluate(); // Perform the evaluation
+                    break; // Break the loop if evaluation succeeds without file modification
+                } catch (const std::runtime_error &e) {
+                    if (std::string(e.what()) == "FileModifiedDuringEvaluation") {
+                        DEBUG_MSG << "Program file was modified during evaluation." << std::endl;
+                        if (++retry_count >= max_retries) {
+                            ERROR_MSG << "Program file is being modified continuously. Maximum retries reached. Aborting." << std::endl;
+                            return std::vector<double>(3, -10000.0);
+                        }
+                        // Update last write time before retrying
+                        lastWriteTimeBefore = getLastWriteTime(fullPath);
+                    } else {
+                        // Handle other std::runtime_error exceptions
+                        throw; // Re-throw the exception to be caught by the outer catch
+                    }
+                }
+            } while (retry_count < max_retries);
+
             // Print the entire results vector
             std::stringstream msgStream;
             msgStream << "Results vector: [";
