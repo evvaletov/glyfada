@@ -182,6 +182,13 @@ private:
 
 
 int main(int argc, char *argv[]) {
+    std::cout << "--------------------------------------------------------\n";
+    std::cout << " Glyfada - Island Model Optimiser\n";
+    std::cout << " Based on the Paradiseo framework\n";
+    std::cout << " Author: Eremey Valetov\n";
+    std::cout << " Build date: " << __DATE__ << " " << __TIME__ << "\n";
+    std::cout << "--------------------------------------------------------\n";
+
     eo::mpi::Node::init(argc, argv);
     //loadRMCParameters (argc, argv);
     int rank;

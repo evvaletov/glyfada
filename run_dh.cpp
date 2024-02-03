@@ -72,7 +72,17 @@ std::vector<double> exec(const std::string &cmd, int n) {
 
     // Check if the output starts with "F" indicating a failed evaluation
     if (!result.empty() && result[0] == 'F') {
-        ERROR_MSG << "Warning: Failed evaluation - " << result << std::endl;
+        ERROR_MSG << "Warning: Failed evaluation (unknown reason) - " << result << std::endl;
+        return std::vector<double>(n, -10000.0);
+    }
+
+    if (!result.empty() && result[0] == 'Q') {
+        ERROR_MSG << "Warning: Failed evaluation (COSY INFINITY program QUIT) - " << result << std::endl;
+        return std::vector<double>(n, -10000.0);
+    }
+
+    if (!result.empty() && result[0] == 'S') {
+        ERROR_MSG << "Warning: Missing summary file - " << result << std::endl;
         return std::vector<double>(n, -10000.0);
     }
 
@@ -158,7 +168,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
     }
     python_command += "cd " + program_directory + " && ";
     python_command += "python " + program_directory + "/" + program_file +
-            " \"" + escapedJSONParams + "\"'";
+            " \"" + escapedJSONParams + "\" 2>/dev/tty'";
 
     //std::cout << "Constructed Python command: " << python_command << std::endl;
 
