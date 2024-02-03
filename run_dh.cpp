@@ -168,7 +168,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
     }
     python_command += "cd " + program_directory + " && ";
     python_command += "python " + program_directory + "/" + program_file +
-            " \"" + escapedJSONParams + "\" 2>/dev/tty'";
+            " \"" + escapedJSONParams + "\"'";
 
     //std::cout << "Constructed Python command: " << python_command << std::endl;
 
