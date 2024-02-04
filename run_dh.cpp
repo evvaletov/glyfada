@@ -12,6 +12,8 @@
 #include <json.hpp>
 #include "utils/Logging.h"
 
+constexpr int TIMEOUT_SECONDS = 1800;  // 30 minutes
+
 using json = nlohmann::json;
 
 std::string escapeForShell(const std::string &jsonString) {
@@ -61,8 +63,25 @@ std::vector<double> exec(const std::string &cmd, int n) {
         throw std::runtime_error("popen() failed!");
     }
 
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
+    auto startTime = std::chrono::steady_clock::now();
+
+    while (true) {
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime).count();
+
+        if (elapsedTime >= TIMEOUT_SECONDS) {
+            // Timeout reached, terminate the process
+            ERROR_MSG<< "Timeout " << TIMEOUT_SECONDS/60 << " min reached. Terminating the process." << std::endl;
+            pclose(pipe.get());  // Terminate the process
+            return std::vector<double>(n, -10000.0);
+        }
+
+        if (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+            result += buffer.data();
+        } else {
+            // Process finished
+            break;
+        }
     }
 
     // Debug print to check the complete output
@@ -70,20 +89,22 @@ std::vector<double> exec(const std::string &cmd, int n) {
     //result = filterJSONString(result);
     //std::cerr << "Filtered JSON string: " << result << std::endl;
 
-    // Check if the output starts with "F" indicating a failed evaluation
-    if (!result.empty() && result[0] == 'F') {
-        ERROR_MSG << "Warning: Failed evaluation (unknown reason) - " << result << std::endl;
-        return std::vector<double>(n, -10000.0);
-    }
-
-    if (!result.empty() && result[0] == 'Q') {
-        ERROR_MSG << "Warning: Failed evaluation (COSY INFINITY program QUIT) - " << result << std::endl;
-        return std::vector<double>(n, -10000.0);
-    }
-
-    if (!result.empty() && result[0] == 'S') {
-        ERROR_MSG << "Warning: Missing summary file - " << result << std::endl;
-        return std::vector<double>(n, -10000.0);
+    // Check for errors and return an appropriate status code
+    if (!result.empty()) {
+        char firstChar = result[0];
+        if (firstChar == 'F') {
+            // Handle failed evaluation
+            ERROR_MSG << "Failed evaluation (unknown reason) - " << result << std::endl;
+            return std::vector<double>(n, -10000.0);
+        } else if (firstChar == 'Q') {
+            // Handle COSY INFINITY program QUIT
+            ERROR_MSG << "Failed evaluation (COSY INFINITY program QUIT) - " << result << std::endl;
+            return std::vector<double>(n, -10000.0);
+        } else if (firstChar == 'S') {
+            // Handle missing summary file
+            ERROR_MSG << "Missing summary file - " << result << std::endl;
+            return std::vector<double>(n, -10000.0);
+        }
     }
 
     json j;

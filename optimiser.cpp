@@ -335,12 +335,14 @@ int main(int argc, char *argv[]) {
     }
 
     // First, extract the parameters from the JSON data
+    bool use_default_values = json_data.value("use_default_values", true);
     std::vector<nlohmann::json> search_space = json_data["parameters"].get<std::vector<nlohmann::json> >();
 
     // Create empty vectors to hold the parameter names and their bounds
     std::vector<std::string> parameter_names;
     std::vector<double> min_values;
     std::vector<double> max_values;
+    std::vector<double> default_values;
 
     // Create a string to hold the single-category parameters
     std::string single_category_parameters;
@@ -356,6 +358,10 @@ int main(int argc, char *argv[]) {
                 parameter_names.push_back(param["name"].get<std::string>());
                 min_values.push_back(param["min_value"].get<double>());
                 max_values.push_back(param["max_value"].get<double>());
+                // Only add default value if use_default_values is true
+                if (use_default_values) {
+                    default_values.push_back(param["default_value"].get<double>());
+                }
             } else if (param_type == "categorical") {
                 // If it's a categorical parameter, check how many categories it has
                 std::vector<std::string> categories = param["values"].get<std::vector<std::string> >();
@@ -366,7 +372,7 @@ int main(int argc, char *argv[]) {
                 } else {
                     // If it has more than one category, output a "not implemented" message and abort
                     std::cerr << "Categorical parameters with more than one category are not implemented." << std::endl;
-                    exit(1);
+                    exit(EXIT_FAILURE);
                 }
             }
         }
@@ -434,8 +440,16 @@ int main(int argc, char *argv[]) {
 
                     //std::cout << "Trimmed Min string: " << min_str << ", Trimmed Max string: " << max_str << std::endl; // Debug print
 
-                    double min_val = isNumber(min_str) ? std::stod(min_str) : 0.0;
-                    double max_val = isNumber(max_str) ? std::stod(max_str) : 0.0;
+                    if (!isNumber(min_str)) {
+                        ERROR_MSG << "Non-numeric lower bound encountered: " << min_str << std::endl;
+                        return EXIT_FAILURE;
+                    }
+                    if (!isNumber(max_str)) {
+                        ERROR_MSG << "Non-numeric upper bound encountered: " << max_str << std::endl;
+                        return EXIT_FAILURE;
+                    }
+                    double min_val = std::stod(min_str);
+                    double max_val = std::stod(max_str);
                     //std::cout << "Parsed Min: " << min_val << ", Max: " << max_val << std::endl; // Debug print
 
 
@@ -452,6 +466,31 @@ int main(int argc, char *argv[]) {
 
                     parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
                     //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
+
+                    // Extracting the default value (if use_default_values is true)
+                    if (use_default_values && args.size() == 3) {
+                        std::string defaultValueStr = args[2];
+                        size_t defaultStart = defaultValueStr.find("default_value=");
+                        if (defaultStart != std::string::npos) {
+                            defaultValueStr = defaultValueStr.substr(defaultStart + strlen("default_value="));
+                            defaultValueStr = trim(defaultValueStr);
+                            // TODO: the following is a workaround for parseArguments leaving a final ")". Fix this.
+                            // Remove a single trailing parenthesis if present
+                            if (!defaultValueStr.empty() && defaultValueStr.back() == ')') {
+                                defaultValueStr.pop_back();
+                            }
+                            if (!isNumber(defaultValueStr)) {
+                                ERROR_MSG << "Non-numeric default value encountered: " << defaultValueStr << std::endl;
+                                return EXIT_FAILURE;
+                            }
+                            double defaultValue = std::stod(defaultValueStr);
+                            default_values.push_back(defaultValue);
+                        } else {
+                            // Handle the case where no default value is specified
+                            ERROR_MSG << "No default value specified for parameter: " << parameter_names.back() << std::endl;
+                            return EXIT_FAILURE;
+                        }
+                    }
                 }
             }
         }
@@ -460,14 +499,21 @@ int main(int argc, char *argv[]) {
     }
 
     for (size_t i = 0; i < parameter_names.size(); ++i) {
-        INFO_MSG << "Parameter: " << parameter_names[i] << ", Min: " << min_values[i] << ", Max: " << max_values[i] <<
-                std::endl;
+        std::stringstream message;
+        message << "Parameter: " << parameter_names[i]
+                << ", Min: " << min_values[i]
+                << ", Max: " << max_values[i];
+        if (use_default_values) {
+            message << ", Default: " << default_values[i];
+        }
+        INFO_MSG << message.str() << std::endl;
     }
+
     INFO_MSG << "Single-category parameters: " << single_category_parameters << std::endl;
 
     if (N_TRAITS != parameter_names.size()) {
         ERROR_MSG << "ERROR: The number of parameters does not match the number of EO optimizer traits" << std::endl;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     EvalFunction evalFunc;
@@ -570,6 +616,19 @@ int main(int argc, char *argv[]) {
         // ISLAND 1
         // generate initial population
         eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+
+        // TODO: implement handling of multiple default values (to start from several good solutions)
+        if (use_default_values) {
+            if (true) {
+                for (int i = 0; i < N_TRAITS; ++i) {
+                    pop1[0][i] = default_values[i];
+                }
+            }
+        }
+        DEBUG_MSG << "Worker " << rank << ": Sending population to master." << std::endl;
+        DEBUG_MSG << "Worker " << rank << ": First individual in population: " << pop1[0] << std::endl;
+        DEBUG_MSG << "Worker " << rank << ": Second individual in population: " << pop1[1] << std::endl;
+
         std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy

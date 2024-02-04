@@ -49,8 +49,24 @@ std::vector<std::string> read_dependency_files(const nlohmann::json &json) {
     return dependency_files;
 }
 
-bool isNumber(const std::string &str) {
-    return !str.empty() && str.find_first_not_of("-.0123456789") == std::string::npos;
+
+bool isNumber(const std::string& str) {
+    // Copy the input string to modify it.
+    std::string s = str;
+
+    // Erase trailing whitespace
+    s.erase(s.find_last_not_of(" \f\n\r\t\v") + 1);
+
+    if (s.empty()) {
+        return false;
+    }
+
+    std::istringstream iss(s);
+    double num;
+    iss >> num;
+
+    // Check for a successful parse and no characters remaining.
+    return iss.eof() && !iss.fail();
 }
 
 std::string trim(const std::string &str) {
