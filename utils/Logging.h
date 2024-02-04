@@ -18,12 +18,12 @@
 #define DEBUG_LEVEL DEBUG_LEVEL_INFO
 #endif
 
-// Function to get current date-time
-std::string currentDateTime();
-
 // Optional flag for including MPI and thread info in logs
 // Define this flag in your compile-time settings if you want to include this info
 #define INCLUDE_MPI_THREAD_DEBUG
+
+// Function to get current date-time
+std::string currentDateTime();
 
 std::string createLogPrefix();
 
