@@ -7,24 +7,26 @@ set(CMAKE_CXX_FLAGS "-fopenmp")
 
 # Detect system to set specific configurations
 if(EXISTS "/global/cfs/cdirs")
-    # Configuration if /global/cfs/cdirs exists
-    execute_process(COMMAND module load craype-x86-milan PrgEnv-gnu openmpi gcc)
-    set(BOOST_ROOT "/global/cfs/cdirs/m509/paradiseo/boost_1_84_0/bin")
-    set(PARADISEO_ROOT "/global/cfs/cdirs/m509/paradiseo/paradiseo")
+	# Configuration if /global/cfs/cdirs exists
+	# execute_process(COMMAND module load craype-x86-milan PrgEnv-gnu openmpi gcc)
+	set(BOOST_ROOT "/global/cfs/cdirs/m509/paradiseo/boost_1_84_0/bin")
+	set(PARADISEO_ROOT "/global/cfs/cdirs/m509/paradiseo/paradiseo")
+	message(STATUS "Configuring for Perlmutter")
 elseif(EXISTS "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
-    # Configuration for wc2.fnal.gov and wc.fnal.gov
-    set(MPI_C_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
-    set(MPI_CXX_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicxx")
-    set(BOOST_ROOT "/work1/beamopt/paradiseo/boost_1_84_0/bin")
-    set(PARADISEO_ROOT "/work1/beamopt/paradiseo/paradiseo")
+	# Configuration for wc2.fnal.gov and wc.fnal.gov
+	set(MPI_C_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
+	set(MPI_CXX_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicxx")
+	set(BOOST_ROOT "/work1/beamopt/paradiseo/boost_1_84_0/bin")
+	set(PARADISEO_ROOT "/work1/beamopt/paradiseo/paradiseo")
+	message(STATUS "Configuring for TeV cluster")
 else()
-    # Default configuration
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g -fopenmp")
-    set(CMAKE_BUILD_TYPE Debug)
-    set(BOOST_ROOT "/opt/boost_1_84_0")
-    set(PARADISEO_ROOT "/home/evaletov/paradiseo/gitclone")
+	# Default configuration
+	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g -fopenmp")
+	set(CMAKE_BUILD_TYPE Debug)
+	set(BOOST_ROOT "/opt/boost_1_84_0")
+	set(PARADISEO_ROOT "/home/evaletov/paradiseo/gitclone")
+	message(STATUS "Configuring for Generic system")
 endif()
-
 
 set(Boost_USE_STATIC_LIBS ON)
 set(PARADISEO_LIB_DIR "${PARADISEO_ROOT}/build/lib" CACHE PATH "Path to Paradiseo library directory")
