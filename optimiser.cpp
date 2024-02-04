@@ -252,7 +252,7 @@ int main(int argc, char *argv[]) {
         config_filename = parser.valueOf<std::string>("config");
     } else {
         ERROR_MSG << "Usage: " << argv[0] << " --config=<config_file_path>\n";
-        return 1;
+        return EXIT_FAILURE;
     }
 
     // Read the JSON file
@@ -265,12 +265,16 @@ int main(int argc, char *argv[]) {
     if (program_directory == "cwd") {
         program_directory = fs::current_path().string();
     }
+    // Check if the program directory exists
+    if (!fs::exists(program_directory)) {
+        ERROR_MSG << "Program directory '" << program_directory << "' does not exist." << std::endl;
+        return EXIT_FAILURE;
+    }
     std::vector<std::string> dependency_files = read_dependency_files(json_data);
 
     // Read parameters from JSON file
     unsigned int POP_SIZE = json_data.value("popSize", 200);
     unsigned int MAX_GEN = json_data.value("maxGen", 50);
-    //TODO: Implement MAX_TIME
     unsigned int MAX_TIME = json_data.value("maxTime", 100);  // New parameter
     std::string RUN_LIMIT_TYPE = json_data.value("runLimitType", "maxGen");  // New parameter
     unsigned int MIGRATION_PERIOD = json_data.value("migrationPeriod", 1);  // New parameter
