@@ -12,7 +12,7 @@
 #include <json.hpp>
 #include "utils/Logging.h"
 
-constexpr int TIMEOUT_SECONDS = 1800;  // 30 minutes
+constexpr int TIMEOUT_SECONDS = 60 * 30;
 
 using json = nlohmann::json;
 
@@ -63,25 +63,8 @@ std::vector<double> exec(const std::string &cmd, int n) {
         throw std::runtime_error("popen() failed!");
     }
 
-    auto startTime = std::chrono::steady_clock::now();
-
-    while (true) {
-        auto currentTime = std::chrono::steady_clock::now();
-        auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime).count();
-
-        if (elapsedTime >= TIMEOUT_SECONDS) {
-            // Timeout reached, terminate the process
-            ERROR_MSG<< "Timeout " << TIMEOUT_SECONDS/60 << " min reached. Terminating the process." << std::endl;
-            pclose(pipe.get());  // Terminate the process
-            return std::vector<double>(n, -10000.0);
-        }
-
-        if (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-            result += buffer.data();
-        } else {
-            // Process finished
-            break;
-        }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
     }
 
     // Debug print to check the complete output
@@ -90,6 +73,7 @@ std::vector<double> exec(const std::string &cmd, int n) {
     //std::cerr << "Filtered JSON string: " << result << std::endl;
 
     // Check for errors and return an appropriate status code
+    //INFO_MSG << "Result: " << result.substr(0, 6) << " (Length: " << result.length() << ")" << std::endl;
     if (!result.empty()) {
         char firstChar = result[0];
         if (firstChar == 'F') {
@@ -105,6 +89,12 @@ std::vector<double> exec(const std::string &cmd, int n) {
             ERROR_MSG << "Missing summary file - " << result << std::endl;
             return std::vector<double>(n, -10000.0);
         }
+    }
+
+    if (result.length() == 0) {
+        // Handle failed evaluation
+        ERROR_MSG << "Failed evaluation (possibly timeout) - " << result << std::endl;
+        return std::vector<double>(n, -10000.0);
     }
 
     json j;
@@ -188,6 +178,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
         python_command += source_command + " && ";
     }
     python_command += "cd " + program_directory + " && ";
+    python_command += "timeout " + std::to_string(TIMEOUT_SECONDS) + "s ";
     python_command += "python " + program_directory + "/" + program_file +
             " \"" + escapedJSONParams + "\"'";
 

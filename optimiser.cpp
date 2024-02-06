@@ -685,6 +685,7 @@ int main(int argc, char *argv[]) {
         {
 
             if (RUN_LIMIT_TYPE == "maxGen") {
+                INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << continuatorGen << std::endl;
                 pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
                     num_mpi_ranks, topo, POP_SIZE, init,
                     intPolicy_1,  // Integration policy
@@ -695,6 +696,7 @@ int main(int argc, char *argv[]) {
                     transform);
                 cout << "Continuator status on MPI rank " << rank << ": " << continuatorGen << endl;
             } else if (RUN_LIMIT_TYPE == "maxTime") {
+                INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
                 pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
                     num_mpi_ranks, topo, POP_SIZE, init,
                     intPolicy_1,  // Integration policy
