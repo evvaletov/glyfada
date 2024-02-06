@@ -12,7 +12,7 @@
 #include <json.hpp>
 #include "utils/Logging.h"
 
-constexpr int TIMEOUT_SECONDS = 60 * 30;
+constexpr int TIMEOUT_SECONDS = 60 * 20;
 
 using json = nlohmann::json;
 
