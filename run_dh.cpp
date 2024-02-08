@@ -177,9 +177,10 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
         python_command += source_command + " && ";
     }
     python_command += "cd " + program_directory + " && ";
-    python_command += "timeout " + std::to_string(TIMEOUT_SECONDS) + "s ";
-    python_command += "python " + program_directory + "/" + program_file +
-            " \"" + escapedJSONParams + "\"'";
+    python_command += "timeout " + std::to_string(timeout_seconds+60) + "s ";
+    python_command += "python " + program_directory + "/" + program_file;
+    python_command += " --timeout " + std::to_string(timeout_seconds);
+    python_command += " \"" + escapedJSONParams + "\"'";
 
     //std::cout << "Constructed Python command: " << python_command << std::endl;
 
