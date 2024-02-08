@@ -54,7 +54,8 @@ typedef std::vector<double> (*EvalFunction)(
     const std::vector<std::string> &,
     const std::vector<std::string> &,
     const std::vector<double> &,
-    const std::string &);
+    const std::string &,
+    int);
 
 // the moeoObjectiveVectorTraits
 template<int N_OBJECTIVES>
@@ -98,12 +99,12 @@ public:
                const std::string &single_category_parameters, const std::string &program_directory,
                const std::string &program_file, const std::string &config_file,
                const std::vector<std::string> &dependency_files,
-               int islandId = -1)
+               int islandId = -1, int timeout_seconds = 60 * 30)
         : evaluator(evaluator), source_command(source_command), parameter_names(parameter_names),
           single_category_parameters(single_category_parameters),
           program_directory(program_directory), program_file(program_file), config_file(config_file),
           dependency_files(
-              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId) {
+              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId), timeout_seconds(timeout_seconds) {
     }
 
     void operator()(GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> &_vec) override {
@@ -119,7 +120,7 @@ public:
             // Call run_g4beamline or run_cosy with the appropriate arguments
             std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file,
                                                     dependency_files, parameter_names,
-                                                    parameter_values, single_category_parameters);
+                                                    parameter_values, single_category_parameters, timeout_seconds);
 
             std::stringstream msgStream;
             int mpiRank;
@@ -169,6 +170,7 @@ private:
     std::string config_file;
     std::vector<std::string> &dependency_files;
     int islandId;
+    int timeout_seconds;
 };
 
 // TODO DONE: check if in eoNormalVecMutation the sigma argument scaled by the range: yes
@@ -287,6 +289,7 @@ int main(int argc, char *argv[]) {
     double SIGMA = json_data.value("sigma", 0.1);
     double P_CHANGE = json_data.value("p_change", 1.0);
     std::string EVALUATOR = json_data.value("evaluator", "cosy");
+    unsigned int TIMEOUT_MINUTES = json_data.value("timeout_minutes", 20);
     std::string SOURCE_COMMAND = json_data.value("source_command", "");
     bool PRINT_ALL_RESULTS = json_data.value("print_all_results", false);
 
@@ -607,9 +610,9 @@ int main(int argc, char *argv[]) {
     } else {
         // objective functions evaluation
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 1);
+                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
         SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 2);
+                                                 program_directory, program_file, config_file, dependency_files, 2, 60 * TIMEOUT_MINUTES);
 
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
         eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);

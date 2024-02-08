@@ -137,7 +137,7 @@ double process_output_file(const std::vector<fs::path>& output_files, const std:
 std::vector<double> run_g4bl(const std::string &source_command, const std::string &program_directory, const std::string &program_file, const std::string &config_file,
                              const std::vector<std::string> &dependency_files,
                              const std::vector<std::string> &parameter_names,
-                             const std::vector<double> &parameter_values, const std::string &single_category_parameters) {
+                             const std::vector<double> &parameter_values, const std::string &single_category_parameters, int timeout_seconds) {
     // Currently, config_file is not implemented for g4bl
     bool debug = false;
     fs::path temp_dir = fs::temp_directory_path() / fs::unique_path();

@@ -12,8 +12,6 @@
 #include <json.hpp>
 #include "utils/Logging.h"
 
-constexpr int TIMEOUT_SECONDS = 60 * 20;
-
 using json = nlohmann::json;
 
 std::string escapeForShell(const std::string &jsonString) {
@@ -153,7 +151,8 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
                            const std::string &program_file, const std::string &config_file,
                            const std::vector<std::string> &dependency_files,
                            const std::vector<std::string> &parameter_names,
-                           const std::vector<double> &parameter_values, const std::string &single_category_parameters) {
+                           const std::vector<double> &parameter_values, const std::string &single_category_parameters,
+                           int timeout_seconds) {
     bool debug = false;
     int max_retries = 3; // Maximum number of retries if the file is modified during evaluation
     int retry_count = 0;
