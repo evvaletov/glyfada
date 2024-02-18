@@ -87,6 +87,7 @@ target_include_directories(optimiser PRIVATE
 		${PARADISEO_ROOT}/moeo/src/
 		${PARADISEO_ROOT}/smp/src/
 		${BOOST_ROOT}
+		${CPP_REDIS_ROOT}/includes
 		${LIBXML2_INCLUDE_DIR}
 		${OPENSSL_INCLUDE_DIR}
 )
