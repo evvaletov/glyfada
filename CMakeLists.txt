@@ -11,6 +11,7 @@ if(EXISTS "/global/cfs/cdirs")
 	# execute_process(COMMAND module load craype-x86-milan PrgEnv-gnu openmpi gcc)
 	set(BOOST_ROOT "/global/cfs/cdirs/m509/paradiseo/boost_1_84_0/bin")
 	set(PARADISEO_ROOT "/global/cfs/cdirs/m509/paradiseo/paradiseo")
+	set(CPP_REDIS_ROOT "/global/cfs/cdirs/m509/paradiseo/cpp_redis")
 	message(STATUS "Configuring for Perlmutter")
 elseif(EXISTS "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
 	# Configuration for wc2.fnal.gov and wc.fnal.gov
@@ -38,8 +39,8 @@ find_package(OpenSSL REQUIRED)
 find_library(EO_LIBRARY eo HINTS ${PARADISEO_LIB_DIR} REQUIRED)
 find_library(EO_UTILS_LIBRARY eoutils HINTS ${PARADISEO_LIB_DIR} REQUIRED)
 find_package(LibXml2 REQUIRED)
-find_library(REDIS_LIBRARY cpp_redis REQUIRED)
-find_library(TACOPIE_LIBRARY tacopie REQUIRED)
+find_library(REDIS_LIBRARY cpp_redis HINTS "${CPP_REDIS_ROOT}/build/lib" REQUIRED)
+find_library(TACOPIE_LIBRARY tacopie HINTS "${CPP_REDIS_ROOT}/build/lib" REQUIRED)
 
 set(SOURCE_FILES
 		run_cosy.cpp
