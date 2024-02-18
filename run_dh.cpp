@@ -54,16 +54,28 @@ std::string escapeForShell(const std::string &jsonString) {
  *   along with the expected and found number of objectives, and the JSON output for further inspection.
  */
 std::vector<double> exec(const std::string &cmd, int n) {
-    std::array<char, 128> buffer;
+    std::array<char, 1024> buffer;
     std::string result;
+    DEBUG_MSG << "Executing command: " << cmd << std::endl << std::flush;
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {
         throw std::runtime_error("popen() failed!");
     }
+    DEBUG_MSG << "Command execution started." << std::endl << std::flush;
 
     while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
         result += buffer.data();
     }
+    if (ferror(pipe.get())) {
+        ERROR_MSG << "Error reading from pipe." << std::endl << std::flush;
+    }
+    int status = pclose(pipe.release());
+    if (status == -1) {
+        ERROR_MSG << "pclose() failed!" << std::endl << std::flush;
+    } else {
+        DEBUG_MSG << "Command exited with status " << WEXITSTATUS(status) << std::endl << std::flush;
+    }
+    DEBUG_MSG << "Command execution finished. Output: " << result << std::endl << std::flush;
 
     // Debug print to check the complete output
     //std::cerr << "Complete output: " << result << std::endl;

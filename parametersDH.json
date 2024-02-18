@@ -1,6 +1,6 @@
 {
-  "omp_num_threads": 5,
-  "mode": "homogeneous",
+  "omp_num_threads": 16,
+  "mode": "redis",
   "evaluator": "dh",
   "timeout_minutes": 20,
   "program_file": "model.py",
@@ -10,9 +10,9 @@
   "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
   "dependency_files": [
   ],
-  "popSize": 5,
+  "popSize": 32,
   "maxGen": 5,
-  "maxTime": 2,
+  "maxTime": 15,
   "runLimitType": "maxTime",
   "eta_c": 20.0,
   "sigma": 0.1,

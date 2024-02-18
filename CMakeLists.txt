@@ -34,9 +34,12 @@ set(PARADISEO_LIB_DIR "${PARADISEO_ROOT}/build/lib" CACHE PATH "Path to Paradise
 find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 find_package(Boost 1.84 REQUIRED COMPONENTS filesystem system mpi serialization)
+find_package(OpenSSL REQUIRED)
 find_library(EO_LIBRARY eo HINTS ${PARADISEO_LIB_DIR} REQUIRED)
 find_library(EO_UTILS_LIBRARY eoutils HINTS ${PARADISEO_LIB_DIR} REQUIRED)
 find_package(LibXml2 REQUIRED)
+find_library(REDIS_LIBRARY cpp_redis REQUIRED)
+find_library(TACOPIE_LIBRARY tacopie REQUIRED)
 
 set(SOURCE_FILES
 		run_cosy.cpp
@@ -84,10 +87,11 @@ target_include_directories(optimiser PRIVATE
 		${PARADISEO_ROOT}/smp/src/
 		${BOOST_ROOT}
 		${LIBXML2_INCLUDE_DIR}
+		${OPENSSL_INCLUDE_DIR}
 )
 
 link_directories(${PARADISEO_LIB_DIR}
 		${BOOST_ROOT}/bin/lib)
 
-target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} MPI::MPI_CXX stdc++fs)
+target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} ${REDIS_LIBRARY} ${TACOPIE_LIBRARY} OpenSSL::Crypto MPI::MPI_CXX stdc++fs)
 

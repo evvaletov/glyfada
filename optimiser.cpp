@@ -84,6 +84,22 @@ class GlyfadaMoeoRealVector final : public moeoRealVector<GlyfadaMoeoObjectiveVe
 public:
     GlyfadaMoeoRealVector() : moeoRealVector<GlyfadaMoeoObjectiveVector<N_OBJECTIVES> >(N_TRAITS) {
     }
+
+    // Overload the equality operator with tolerance
+    bool operator==(const GlyfadaMoeoRealVector& other) const {
+        const double TOLERANCE = 1e-6; // Adjust the tolerance as needed
+
+        if (this->size() != other.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < this->size(); ++i) {
+            if (std::abs((*this)[i] - other[i]) > TOLERANCE) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 // Global vectors to store all evaluated solutions and their corresponding generations
@@ -181,6 +197,7 @@ private:
 // TODO: manage loads between islands if running on same MPI rank
 // TODO: implement the possibility of using a different number of OMP threads for each island
 // TODO: merge regular and island-based codes (set mode from parameter file)
+// TODO: implement a Ctrl-C handler that gracefully shuts down the optimisation
 
 
 int main(int argc, char *argv[]) {
@@ -199,6 +216,12 @@ int main(int argc, char *argv[]) {
     int num_mpi_ranks;
     MPI_Comm_size(MPI_COMM_WORLD, &num_mpi_ranks);
     INFO_MSG << "MPI rank: " << rank << endl;
+
+    std::string redisIP;
+    std::string redisPassword = "";
+    int redisPort;
+    std::string redisJobID = "";
+    bool redisWriteAll = false;
 
     /*if (my_node != nullptr) {
         // Print MPI Rank at the beginning of each line
@@ -224,7 +247,8 @@ int main(int argc, char *argv[]) {
     // Narrow it down to microseconds and convert to an unsigned integer
     unsigned seed = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
     // Seed the random number generator
-    eo::rng.reseed(seed);
+    eo::rng.reseed(seed+rank);
+    INFO_MSG << "Seed: " << seed+rank << std::endl;
     //eo::rng.reseed(2 - rank);
 
     eoParser parser(argc, argv, "Glyfada"); // for user-parameter reading
@@ -297,6 +321,50 @@ int main(int argc, char *argv[]) {
     // modes: multistart, homogeneous
     std::string mode = json_data.value("mode", "multistart");
     INFO_MSG << "Operation mode set to: " << mode << std::endl;
+
+    if (mode.find("redis") != std::string::npos) {
+        // Mode contains "redis", attempt to load Redis credentials and job_ID from the main config
+        if (json_data.contains("redis_ip") && json_data.contains("redis_port")) {
+            redisIP = json_data["redis_ip"];
+            redisPort = json_data["redis_port"];
+            if (json_data.contains("redis_password")) {
+                redisPassword = json_data["redis_password"];
+            }
+            if (json_data.contains("redis_job_ID")) {
+                redisJobID = json_data["redis_job_ID"];
+            }
+            if (json_data.contains("redis_write_all")) {
+                redisWriteAll = json_data["redis_write_all"].get<bool>();
+            }
+        } else {
+            // Redis credentials and job_ID not found in main config, load from redis.json
+            try {
+                nlohmann::json redis_config = read_json_file("redis.json"); // Replace with your redis config file name
+
+                redisIP = redis_config["redis_ip"];
+                redisPort = redis_config["redis_port"];
+                if (redis_config.contains("redis_password")) {
+                    redisPassword = redis_config["redis_password"];
+                }
+                if (redis_config.contains("redis_job_ID")) {
+                    redisJobID = redis_config["redis_job_ID"];
+                }
+                if (!json_data.contains("redis_write_all") && redis_config.contains("redis_write_all")) {
+                    redisWriteAll = redis_config["redis_write_all"].get<bool>();
+                }
+            } catch (std::exception& e) {
+                std::cerr << "Error loading Redis credentials and job_ID from redis.json: " << e.what() << std::endl;
+                return EXIT_FAILURE;
+            }
+        }
+        // Check if redisJobID is set
+        if (redisJobID.empty()) {
+            std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
+            return EXIT_FAILURE;
+        }
+        INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
+        INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
+    }
 
     // Check if interactive mode parameter was provided in command line
     if (parser.isItThere(interactiveParam)) {
@@ -607,7 +675,7 @@ int main(int argc, char *argv[]) {
             MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
         nsgaII(pop);
-    } else {
+    } else if (mode == "MPI") {
         // objective functions evaluation
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
@@ -750,6 +818,197 @@ int main(int argc, char *argv[]) {
         //std::cout << "Joining pops on mpi rank " << rank << std::endl;
         ///pop1.append(pop2);
         //pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
+    } else if (mode == "redistest") {
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test1", POP_SIZE);
+
+        // Test key and value
+        std::string testKey = "testKey";
+        std::string testValue = "Hello, Redis!";
+
+        // Set a value
+        manager->setValue(testKey, testValue);
+        std::cout << "Value set for key '" << testKey << "': " << testValue << std::endl;
+
+        // Get the value
+        std::string retrievedValue = manager->getValue(testKey);
+        std::cout << "Retrieved value for key '" << testKey << "': " << retrievedValue << std::endl;
+
+        // Delete the key
+        manager->deleteKey(testKey);
+        std::cout << "Key '" << testKey << "' deleted." << std::endl;
+
+        // Try to get the value again
+        retrievedValue = manager->getValue(testKey);
+        if (retrievedValue.empty()) {
+            std::cout << "No value found for key '" << testKey << "' after deletion." << std::endl;
+        }
+
+        // Test population size management
+        size_t popSize = manager->getPopulationSize();
+        std::cout << "Current population size: " << popSize << std::endl;
+
+        // Check initial state of isMainInstance
+        bool initialMainInstanceStatus = manager->getIsMainInstance();
+        std::cout << "Initial isMainInstance status: " << (initialMainInstanceStatus ? "true" : "false") << std::endl;
+
+        // Set isMainInstance to true for testing
+        manager->setIsMainInstance(true);
+        std::cout << "isMainInstance set to true for debugging." << std::endl;
+
+        // Check the state of isMainInstance after setting it to true
+        bool updatedMainInstanceStatus = manager->getIsMainInstance();
+        std::cout << "Updated isMainInstance status: " << (updatedMainInstanceStatus ? "true" : "false") << std::endl;
+
+        // Increment population size
+        int incrementAmount = 5;
+        manager->incrementPopulationSize(incrementAmount);
+        std::cout << "Incremented population size by " << incrementAmount << "." << std::endl;
+
+        // Get new population size
+        popSize = manager->getPopulationSize();
+        std::cout << "New population size after increment: " << popSize << std::endl;
+
+        // Decrement population size
+        int decrementAmount = 3;
+        manager->decrementPopulationSize(decrementAmount);
+        std::cout << "Decremented population size by " << decrementAmount << "." << std::endl;
+
+        // Get final population size
+        popSize = manager->getPopulationSize();
+        std::cout << "Final population size after decrement: " << popSize << std::endl;
+
+        manager->clearPopulation();
+
+        // objective functions evaluation
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
+                                                program_directory, program_file, config_file, dependency_files);
+
+        eoRealVectorBounds bounds(min_values, max_values);
+        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
+        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
+        moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
+            MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
+
+        nsgaII(pop);
+
+        // First call to updatePopulation
+        std::cout << "Sending population to Redis DB:" << std::endl;
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pop;
+        for (size_t i = 0; i < mainPop.size(); ++i) {
+            std::ostringstream oss;
+            mainPop[i].printOn(oss);  // Assuming printOn is defined for the individual type
+            std::cout << "Individual " << i << ": " << oss.str() << std::endl;
+        }
+
+        // First call to updatePopulation
+        manager->updatePopulation(pop);
+        std::cout << "First call to updatePopulation completed." << std::endl;
+
+        // Second call to updatePopulation with the same 'pop'
+        manager->updatePopulation(pop);
+        std::cout << "Second call to updatePopulation with the same population completed." << std::endl;
+
+        // Extract the eoPop object from SerializableBase wrapper
+
+
+        if (manager->getIsMainInstance()) {
+            auto retrievedPop = manager->retrievePopulation(POP_SIZE);
+            std::cout << "Retrieved population size: " << retrievedPop.size() << std::endl;
+            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pop;
+            mainPop.append(retrievedPop);
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (mainPop);
+        }
+
+         //return EXIT_SUCCESS;
+    } else if (mode== "redis") {
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test2", POP_SIZE);
+        //manager->clearPopulation();
+        //manager->addTestIndividual();
+
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
+                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
+        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
+                                                 program_directory, program_file, config_file, dependency_files, 2, 60 * TIMEOUT_MINUTES);
+
+        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
+        eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
+        eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
+        Topology<Complete> topo;
+        Redis_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo, 0);
+
+        // ISLAND 1
+        // generate initial population
+        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+        // TODO: implement handling of multiple default values (to start from several good solutions)
+        if (use_default_values) {
+            if (true) {
+                for (int i = 0; i < N_TRAITS; ++i) {
+                    pop1[0][i] = default_values[i];
+                }
+            }
+        }
+
+        //TODO: implement default values
+        //eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > chromInit(bounds);
+
+        DEBUG_MSG << "Worker " << rank << ": Sending population to master." << std::endl;
+        DEBUG_MSG << "Worker " << rank << ": First individual in population: " << pop1[0] << std::endl;
+        DEBUG_MSG << "Worker " << rank << ": Second individual in population: " << pop1[1] << std::endl;
+        std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
+        //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
+        // // Emigration policy
+        // // // Element 1
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(MIGRATION_PERIOD);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(TOURNAMENT_SIZE);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, SELECTION_NUMBER);
+        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
+        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
+        // // Integration policy
+        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
+
+        if (RUN_LIMIT_TYPE == "maxGen") {
+            INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << continuatorGen << std::endl;
+            pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
+                1, topo, POP_SIZE, init,
+                intPolicy_1,  // Integration policy
+                migPolicy_1,  // Migration policy
+                HOMOGENEOUS_ISLAND,
+                continuatorGen,  // Stopping criteria
+                eval1,  // Evaluation function
+                transform);
+            cout << "Continuator status on MPI rank " << rank << ": " << continuatorGen << endl;
+        } else if (RUN_LIMIT_TYPE == "maxTime") {
+            INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
+            pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
+                1, topo, POP_SIZE, init,
+                intPolicy_1,  // Integration policy
+                migPolicy_1,  // Migration policy
+                HOMOGENEOUS_ISLAND,
+                continuatorTime,  // Stopping criteria
+                eval1,  // Evaluation function
+                transform);
+            cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
+        } else {
+            throw std::runtime_error("Invalid RUN_LIMIT_TYPE specified");
+        }
+
+        if (manager->getIsMainInstance() or redisWriteAll) {
+            auto retrievedPop = manager->retrieveEntirePopulation();
+            if (!redisWriteAll) manager->clearPopulation();
+            std::cout << "Retrieved pop: " << retrievedPop.size() << std::endl;
+            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pops[0];
+            cout << "Main pop: " << mainPop.size() << endl;
+            mainPop.append(retrievedPop);
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (mainPop);
+            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+            //cout << "Pop size before archiving: " << pops[0].size() << endl;
+            cout << "Archive update: " << arch1(pop) << endl;
+
+            arch1.sortedPrintOn(cout);
+        }
     }
 
     moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch;
@@ -777,7 +1036,11 @@ int main(int argc, char *argv[]) {
 
     if (comm.rank() == DEFAULT_MASTER) {
         // Master process: Receive pop from all other processes
-        DEBUG_MSG << "Master: Ready to receive populations from workers." << std::endl;
+        if (mode=="MPI") {
+            DEBUG_MSG << "Master: Ready to receive populations from workers." << std::endl;
+        } else {
+            DEBUG_MSG << "Main instance: Writing the archive to files." << std::endl;
+        }
         for (int i = 1; i < comm.size(); ++i) {
             eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > popUnpacked0(POP_SIZE, init);
             SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > popUnpacked(popUnpacked0);
@@ -786,7 +1049,7 @@ int main(int argc, char *argv[]) {
             DEBUG_MSG << "Master: Received population from worker " << i << "." << std::endl;
             arch(popUnpacked); // Process the received population
         }
-        DEBUG_MSG << "Master: All populations received and processed." << std::endl;
+        if (mode=="MPI")DEBUG_MSG << "Master: All populations received and processed." << std::endl;
 
         //eoserial::unpack( o, "pop", popUnpacked);
         arch(pop);
