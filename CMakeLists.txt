@@ -71,7 +71,6 @@ set(SOURCE_FILES
 		utils/Utilities.h
 		utils/Utilities.cpp
 		utils/Logging.cpp
-		# Add any additional source files here...
 )
 
 add_executable(optimiser ${SOURCE_FILES})
