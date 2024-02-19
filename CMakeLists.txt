@@ -19,6 +19,7 @@ elseif(EXISTS "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
 	set(MPI_CXX_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicxx")
 	set(BOOST_ROOT "/work1/beamopt/paradiseo/boost_1_84_0/bin")
 	set(PARADISEO_ROOT "/work1/beamopt/paradiseo/paradiseo")
+	set(CPP_REDIS_ROOT "/work1/beamopt/paradiseo/cpp_redis")
 	message(STATUS "Configuring for TeV cluster")
 else()
 	# Default configuration
