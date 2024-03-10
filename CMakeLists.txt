@@ -106,3 +106,5 @@ link_directories(${PARADISEO_LIB_DIR}
 
 target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} ${REDIS_LIBRARY} ${TACOPIE_LIBRARY} OpenSSL::Crypto MPI::MPI_CXX stdc++fs)
 
+install(TARGETS optimiser DESTINATION bin)
+
