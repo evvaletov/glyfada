@@ -184,6 +184,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
     params_stream << "}";
 
     std::string escapedJSONParams = escapeForShell(params_stream.str());
+// TODO: make shell-independent
     std::string python_command = "/bin/zsh -c '";
     if (!source_command.empty()) {
         python_command += source_command + " && ";

@@ -929,7 +929,7 @@ int main(int argc, char *argv[]) {
 
          //return EXIT_SUCCESS;
     } else if (mode== "redis") {
-        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test2", POP_SIZE);
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisJobID, POP_SIZE);
         //manager->clearPopulation();
         //manager->addTestIndividual();
 
@@ -947,6 +947,9 @@ int main(int argc, char *argv[]) {
         // ISLAND 1
         // generate initial population
         eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
+        //if (load_from_redis) {
+        //    eoPop<EOT> receivedPop = redisManager->retrievePopulation(numReceived);
+        //}
         // TODO: implement handling of multiple default values (to start from several good solutions)
         if (use_default_values) {
             if (true) {
