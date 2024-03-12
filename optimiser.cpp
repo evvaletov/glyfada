@@ -290,6 +290,11 @@ int main(int argc, char *argv[]) {
     // Check if program_directory is set to 'cwd', then get the current working directory
     if (program_directory == "cwd") {
         program_directory = fs::current_path().string();
+    } else {
+        if (fs::current_path().string() != program_directory) {
+            WARN_MSG << "Warning: The specified program directory '" << program_directory
+                      << "' is not the same as the current working directory." << std::endl;
+        }
     }
     // Check if the program directory exists
     if (!fs::exists(program_directory)) {
