@@ -423,6 +423,7 @@ int main(int argc, char *argv[]) {
     std::vector<double> min_values;
     std::vector<double> max_values;
     std::vector<double> default_values;
+    std::vector<std::vector<double>> default_values_vector;
 
     // Create a string to hold the single-category parameters
     std::string single_category_parameters;
@@ -589,6 +590,8 @@ int main(int argc, char *argv[]) {
         INFO_MSG << message.str() << std::endl;
     }
 
+    default_values_vector.push_back(default_values);
+
     INFO_MSG << "Single-category parameters: " << single_category_parameters << std::endl;
 
     if (N_TRAITS != parameter_names.size()) {
@@ -658,7 +661,7 @@ int main(int argc, char *argv[]) {
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
-    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
+    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(bounds, ETA_C);
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
     eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
@@ -763,7 +766,7 @@ int main(int argc, char *argv[]) {
             if (RUN_LIMIT_TYPE == "maxGen") {
                 INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << continuatorGen << std::endl;
                 pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
-                    num_mpi_ranks, topo, POP_SIZE, init,
+                    num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
                     intPolicy_1,  // Integration policy
                     migPolicy_1,  // Migration policy
                     HOMOGENEOUS_ISLAND,
@@ -774,7 +777,7 @@ int main(int argc, char *argv[]) {
             } else if (RUN_LIMIT_TYPE == "maxTime") {
                 INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
                 pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
-                    num_mpi_ranks, topo, POP_SIZE, init,
+                    num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
                     intPolicy_1,  // Integration policy
                     migPolicy_1,  // Migration policy
                     HOMOGENEOUS_ISLAND,
@@ -980,7 +983,7 @@ int main(int argc, char *argv[]) {
         if (RUN_LIMIT_TYPE == "maxGen") {
             INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << continuatorGen << std::endl;
             pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
-                1, topo, POP_SIZE, init,
+                1, topo, POP_SIZE, default_values_vector, init,
                 intPolicy_1,  // Integration policy
                 migPolicy_1,  // Migration policy
                 HOMOGENEOUS_ISLAND,
@@ -991,7 +994,7 @@ int main(int argc, char *argv[]) {
         } else if (RUN_LIMIT_TYPE == "maxTime") {
             INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
             pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
-                1, topo, POP_SIZE, init,
+                1, topo, POP_SIZE, default_values_vector, init,
                 intPolicy_1,  // Integration policy
                 migPolicy_1,  // Migration policy
                 HOMOGENEOUS_ISLAND,
