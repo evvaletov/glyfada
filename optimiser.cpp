@@ -416,7 +416,6 @@ int main(int argc, char *argv[]) {
 
     // First, extract the parameters from the JSON data
     bool use_default_values = json_data.value("use_default_values", true);
-    std::vector<nlohmann::json> search_space = json_data["parameters"].get<std::vector<nlohmann::json> >();
 
     // Create empty vectors to hold the parameter names and their bounds
     std::vector<std::string> parameter_names;
@@ -429,6 +428,7 @@ int main(int argc, char *argv[]) {
     std::string single_category_parameters;
 
     if (!parse_dh_model) {
+        std::vector<nlohmann::json> search_space = json_data["parameters"].get<std::vector<nlohmann::json> >();
         // Iterate through each parameter
         for (const auto &param: search_space) {
             // Check the parameter type
