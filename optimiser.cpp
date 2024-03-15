@@ -9,6 +9,8 @@
 #include <utils/eoParser.h>
 #include <cstdlib>
 
+#include <algorithm>
+
 #include <vector>
 #include <string>
 #include <json.hpp>
@@ -220,7 +222,9 @@ int main(int argc, char *argv[]) {
     std::string redisIP;
     std::string redisPassword = "";
     int redisPort;
+    int redisMaxPopSize;
     std::string redisJobID = "";
+    std::string redisInitJobID = "";
     bool redisWriteAll = false;
 
     /*if (my_node != nullptr) {
@@ -327,49 +331,63 @@ int main(int argc, char *argv[]) {
     std::string mode = json_data.value("mode", "multistart");
     INFO_MSG << "Operation mode set to: " << mode << std::endl;
 
-    if (mode.find("redis") != std::string::npos) {
-        // Mode contains "redis", attempt to load Redis credentials and job_ID from the main config
-        if (json_data.contains("redis_ip") && json_data.contains("redis_port")) {
-            redisIP = json_data["redis_ip"];
-            redisPort = json_data["redis_port"];
-            if (json_data.contains("redis_password")) {
-                redisPassword = json_data["redis_password"];
-            }
-            if (json_data.contains("redis_job_ID")) {
-                redisJobID = json_data["redis_job_ID"];
-            }
-            if (json_data.contains("redis_write_all")) {
-                redisWriteAll = json_data["redis_write_all"].get<bool>();
-            }
-        } else {
-            // Redis credentials and job_ID not found in main config, load from redis.json
-            try {
-                nlohmann::json redis_config = read_json_file("redis.json"); // Replace with your redis config file name
-
-                redisIP = redis_config["redis_ip"];
-                redisPort = redis_config["redis_port"];
-                if (redis_config.contains("redis_password")) {
-                    redisPassword = redis_config["redis_password"];
-                }
-                if (redis_config.contains("redis_job_ID")) {
-                    redisJobID = redis_config["redis_job_ID"];
-                }
-                if (!json_data.contains("redis_write_all") && redis_config.contains("redis_write_all")) {
-                    redisWriteAll = redis_config["redis_write_all"].get<bool>();
-                }
-            } catch (std::exception& e) {
-                std::cerr << "Error loading Redis credentials and job_ID from redis.json: " << e.what() << std::endl;
-                return EXIT_FAILURE;
-            }
+ if (mode.find("redis") != std::string::npos) {
+    // Mode contains "redis", attempt to load Redis credentials and job_ID from the main config
+    if (json_data.contains("redis_ip") && json_data.contains("redis_port")) {
+        redisIP = json_data["redis_ip"];
+        redisPort = json_data["redis_port"];
+        if (json_data.contains("redis_password")) {
+            redisPassword = json_data["redis_password"];
         }
-        // Check if redisJobID is set
-        if (redisJobID.empty()) {
-            std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
+        if (json_data.contains("redis_job_ID")) {
+            redisJobID = json_data["redis_job_ID"];
+        }
+        if (json_data.contains("redis_init_job_ID")) {
+            redisInitJobID = json_data["redis_init_job_ID"]; // Load initial population job ID
+        }
+        if (json_data.contains("redis_max_pop_size")) {
+            redisMaxPopSize = json_data["redis_max_pop_size"].get<int>(); // Load max population size
+        }
+        if (json_data.contains("redis_write_all")) {
+            redisWriteAll = json_data["redis_write_all"].get<bool>();
+        }
+    } else {
+        // Redis credentials and job_ID not found in main config, load from redis.json
+        try {
+            nlohmann::json redis_config = read_json_file("redis.json"); // Replace with your redis config file name
+
+            redisIP = redis_config["redis_ip"];
+            redisPort = redis_config["redis_port"];
+            if (redis_config.contains("redis_password")) {
+                redisPassword = redis_config["redis_password"];
+            }
+            if (redis_config.contains("redis_job_ID")) {
+                redisJobID = redis_config["redis_job_ID"];
+            }
+            if (redis_config.contains("redis_init_job_ID")) {
+                redisInitJobID = redis_config["redis_init_job_ID"]; // Load initial population job ID
+            }
+            if (redis_config.contains("redis_max_pop_size")) {
+                redisMaxPopSize = redis_config["redis_max_pop_size"].get<int>(); // Load max population size
+            }
+            if (!json_data.contains("redis_write_all") && redis_config.contains("redis_write_all")) {
+                redisWriteAll = redis_config["redis_write_all"].get<bool>();
+            }
+        } catch (std::exception& e) {
+            std::cerr << "Error loading Redis credentials and job_ID from redis.json: " << e.what() << std::endl;
             return EXIT_FAILURE;
         }
-        INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
-        INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
     }
+    // Check if redisJobID is set
+    if (redisJobID.empty()) {
+        std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
+        return EXIT_FAILURE;
+    }
+    INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
+    INFO_MSG << "Redis init jobID = " << (redisInitJobID.empty() ? "Not set" : redisInitJobID) << std::endl; // Report the initial population job ID
+    INFO_MSG << "Redis max population size = " << redisMaxPopSize << std::endl; // Report the max population size
+    INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
+}
 
     // Check if interactive mode parameter was provided in command line
     if (parser.isItThere(interactiveParam)) {
@@ -812,7 +830,7 @@ int main(int argc, char *argv[]) {
         ///pop1.append(pop2);
         //pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
     } else if (mode == "redistest") {
-        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test10", POP_SIZE);
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test10", (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
 
         // Test key and value
         std::string testKey = "testKey";
@@ -929,8 +947,39 @@ int main(int argc, char *argv[]) {
 
          //return EXIT_SUCCESS;
     } else if (mode=="redis") {
-        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisJobID, POP_SIZE);
-        manager->setParameters(parameter_names, default_values);
+
+        if (!redisInitJobID.empty()) {
+            RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+            if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
+            // Retrieve the entire population from Redis
+            auto retrievedPop = manager->retrieveEntirePopulation();
+            // Determine N, the number of individuals to initialize
+            size_t N = std::min(static_cast<size_t>(POP_SIZE), retrievedPop.size());
+            // Initialize the default_values_vector with size N
+            default_values_vector.resize(N, std::vector<double>(N_TRAITS));
+            // Loop through each individual up to N
+            for (size_t i = 0; i < N; i++) {
+                // Assuming retrievedPop is a collection of vector-like structures representing individuals
+                for (size_t j = 0; j < N_TRAITS && j < retrievedPop[i].size(); j++) {
+                    // Assign the trait values from the retrieved population to default_values_vector
+                    default_values_vector[i][j] = retrievedPop[i][j];
+                }
+            }
+            std::stringstream msgStream;
+            msgStream << "Loaded the following default value vectors from Redis with init job ID: " << redisInitJobID << std::endl;
+            for (const auto& vec : default_values_vector) {
+                msgStream << "(";
+                for (size_t j = 0; j < vec.size(); ++j) {
+                    msgStream << vec[j];
+                    if (j < vec.size() - 1) msgStream << ", ";
+                }
+                msgStream << ")" << std::endl;
+            }
+            INFO_MSG << msgStream.str();
+        }
+
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+        if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
 
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
