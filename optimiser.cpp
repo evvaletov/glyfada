@@ -697,21 +697,6 @@ int main(int argc, char *argv[]) {
         MPI_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
 
         // ISLAND 1
-        // generate initial population
-        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
-
-        // TODO: implement handling of multiple default values (to start from several good solutions)
-        if (use_default_values) {
-            if (true) {
-                for (int i = 0; i < N_TRAITS; ++i) {
-                    pop1[0][i] = default_values[i];
-                }
-            }
-        }
-        DEBUG_MSG << "Worker " << rank << ": Sending population to master." << std::endl;
-        DEBUG_MSG << "Worker " << rank << ": First individual in population: " << pop1[0] << std::endl;
-        DEBUG_MSG << "Worker " << rank << ": Second individual in population: " << pop1[1] << std::endl;
-
         std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy
@@ -827,7 +812,7 @@ int main(int argc, char *argv[]) {
         ///pop1.append(pop2);
         //pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
     } else if (mode == "redistest") {
-        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test1", POP_SIZE);
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test10", POP_SIZE);
 
         // Test key and value
         std::string testKey = "testKey";
@@ -887,6 +872,23 @@ int main(int argc, char *argv[]) {
 
         manager->clearPopulation();
 
+        manager->addTestIndividual("{\"value\": \"1 2 3 8 1 2 3 4 5 6 7 8 \"}");
+        auto retrievedPop = manager->retrievePopulation(1);
+
+        manager->clearPopulation();
+
+        manager->setParameters(parameter_names);
+        manager->addTestIndividual("{\"value\": \"1 2 3 8 N8:8 B50:1 B51:2 B52:3 B53:4 Z90:5 N6:6 N7:7 \"}");
+        retrievedPop = manager->retrievePopulation(1);
+
+        manager->clearPopulation();
+
+        manager->setParameters(parameter_names, default_values);
+        manager->addTestIndividual("{\"value\": \"1 2 3 8 B50:1 B51:2 B52:3 B53:4 Z90:5 N6:6 N8:8 N7:7 \"}");
+        retrievedPop = manager->retrievePopulation(1);
+
+        manager->clearPopulation();
+
         // objective functions evaluation
         SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                 program_directory, program_file, config_file, dependency_files);
@@ -919,22 +921,16 @@ int main(int argc, char *argv[]) {
         manager->updatePopulation(pop);
         std::cout << "Second call to updatePopulation with the same population completed." << std::endl;
 
-        // Extract the eoPop object from SerializableBase wrapper
-
-
         if (manager->getIsMainInstance()) {
             auto retrievedPop = manager->retrievePopulation(POP_SIZE);
             std::cout << "Retrieved population size: " << retrievedPop.size() << std::endl;
-            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pop;
-            mainPop.append(retrievedPop);
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (mainPop);
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (retrievedPop);
         }
 
          //return EXIT_SUCCESS;
-    } else if (mode== "redis") {
+    } else if (mode=="redis") {
         RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisJobID, POP_SIZE);
-        //manager->clearPopulation();
-        //manager->addTestIndividual();
+        manager->setParameters(parameter_names, default_values);
 
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
@@ -947,27 +943,6 @@ int main(int argc, char *argv[]) {
         Topology<Complete> topo;
         Redis_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo, 0);
 
-        // ISLAND 1
-        // generate initial population
-        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
-        //if (load_from_redis) {
-        //    eoPop<EOT> receivedPop = redisManager->retrievePopulation(numReceived);
-        //}
-        // TODO: implement handling of multiple default values (to start from several good solutions)
-        if (use_default_values) {
-            if (true) {
-                for (int i = 0; i < N_TRAITS; ++i) {
-                    pop1[0][i] = default_values[i];
-                }
-            }
-        }
-
-        //TODO: implement default values
-        //eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > chromInit(bounds);
-
-        DEBUG_MSG << "Worker " << rank << ": Sending population to master." << std::endl;
-        DEBUG_MSG << "Worker " << rank << ": First individual in population: " << pop1[0] << std::endl;
-        DEBUG_MSG << "Worker " << rank << ": Second individual in population: " << pop1[1] << std::endl;
         std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy
