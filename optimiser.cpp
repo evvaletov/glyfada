@@ -948,6 +948,10 @@ int main(int argc, char *argv[]) {
          //return EXIT_SUCCESS;
     } else if (mode=="redis") {
 
+        //auto manager1 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+        //manager1->addTestIndividual("{\"value\": \"0 0 0 8 BD0:-2.43735 BD1:1.37736 BD2:-12.9505 BD3:16.3355 BF0:4.82603 BF1:-9.55672 BF2:7.16492 BF3:-3.41765 \"}");
+        //manager1->addTestIndividual("{\"value\": \"0 0 0 8 BD0:-2.44735 BD1:1.36736 BD2:-12.9505 BD3:16.3355 BF0:4.82603 BF1:-9.55672 BF2:7.16492 BF3:-3.41765 \"}");
+
         INFO_MSG << "redisInitJobID: " << redisInitJobID << std::endl;
         if (!redisInitJobID.empty()) {
             auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
@@ -1062,7 +1066,7 @@ int main(int argc, char *argv[]) {
 
         if (manager->getIsMainInstance() or redisWriteAll) {
             auto retrievedPop = manager->retrieveEntirePopulation();
-            if (!redisWriteAll) manager->clearPopulation();
+            //if (!redisWriteAll) manager->clearPopulation();
             std::cout << "Retrieved pop: " << retrievedPop.size() << std::endl;
             eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pops[0];
             cout << "Main pop: " << mainPop.size() << endl;

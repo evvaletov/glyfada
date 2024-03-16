@@ -10,6 +10,7 @@ if(EXISTS "/global/cfs/cdirs")
 	# Configuration if /global/cfs/cdirs exists
 	# execute_process(COMMAND module load craype-x86-milan PrgEnv-gnu openmpi gcc)
 	set(BOOST_ROOT "/global/cfs/cdirs/m509/paradiseo/boost_1_84_0/bin")
+	set(BOOST_LIBRARYDIR "${BOOST_ROOT}/bin/lib")
 	set(PARADISEO_ROOT "/global/cfs/cdirs/m509/paradiseo/paradiseo")
 	set(CPP_REDIS_ROOT "/global/cfs/cdirs/m509/paradiseo/cpp_redis")
 	message(STATUS "Configuring for Perlmutter")
@@ -17,15 +18,23 @@ elseif(EXISTS "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
 	# Configuration for wc2.fnal.gov and wc.fnal.gov
 	set(MPI_C_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
 	set(MPI_CXX_COMPILER "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicxx")
-	set(BOOST_ROOT "/work1/beamopt/paradiseo/boost_1_84_0/bin")
+	set(BOOST_ROOT "/work1/beamopt/paradiseo/boost_1_84_0")
+	set(BOOST_LIBRARYDIR "${BOOST_ROOT}/bin/lib")
 	set(PARADISEO_ROOT "/work1/beamopt/paradiseo/paradiseo")
 	set(CPP_REDIS_ROOT "/work1/beamopt/paradiseo/cpp_redis")
 	message(STATUS "Configuring for TeV cluster")
+elseif(EXISTS "/psi/home")
+	set(BOOST_ROOT "/psi/valetov_e/paradiseo/boost_1_84_0")
+	set(BOOST_LIBRARYDIR "${BOOST_ROOT}/stage/lib")
+	set(PARADISEO_ROOT "/psi/valetov_e/paradiseo/paradiseo")
+	set(CPP_REDIS_ROOT "/psi/valetov_e/paradiseo/cpp_redis")
+	message(STATUS "Configuring for Merlin")
 else()
 	# Default configuration
 	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g -fopenmp")
 	set(CMAKE_BUILD_TYPE Debug)
 	set(BOOST_ROOT "/opt/boost_1_84_0")
+	set(BOOST_LIBRARYDIR "${BOOST_ROOT}/bin/lib")
 	if(EXISTS "/home/evaletov/paradiseo/gitclone")
 		set(PARADISEO_ROOT "/home/evaletov/paradiseo/gitclone")
 	elseif(EXISTS "/home/evaletov/paradiseo/paradiseo")
@@ -102,7 +111,7 @@ target_include_directories(optimiser PRIVATE
 )
 
 link_directories(${PARADISEO_LIB_DIR}
-		${BOOST_ROOT}/bin/lib)
+		${BOOST_LIBRARYDIR})
 
 target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} ${REDIS_LIBRARY} ${TACOPIE_LIBRARY} OpenSSL::Crypto MPI::MPI_CXX stdc++fs)
 
