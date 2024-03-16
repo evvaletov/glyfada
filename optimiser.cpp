@@ -221,8 +221,8 @@ int main(int argc, char *argv[]) {
 
     std::string redisIP;
     std::string redisPassword = "";
-    int redisPort;
-    int redisMaxPopSize;
+    int redisPort = 15559;
+    int redisMaxPopSize = 0;
     std::string redisJobID = "";
     std::string redisInitJobID = "";
     bool redisWriteAll = false;
@@ -948,35 +948,65 @@ int main(int argc, char *argv[]) {
          //return EXIT_SUCCESS;
     } else if (mode=="redis") {
 
+        INFO_MSG << "redisInitJobID: " << redisInitJobID << std::endl;
         if (!redisInitJobID.empty()) {
-            RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
-            if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
+            auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+            if(use_default_values) manager0->setParameters(parameter_names, default_values); else manager0->setParameters(parameter_names);
+
             // Retrieve the entire population from Redis
-            auto retrievedPop = manager->retrieveEntirePopulation();
+            auto retrievedPop = manager0->retrieveEntirePopulation();
+            INFO_MSG << "Retrieved population size: " << retrievedPop.size() << std::endl;
+
             // Determine N, the number of individuals to initialize
             size_t N = std::min(static_cast<size_t>(POP_SIZE), retrievedPop.size());
-            // Initialize the default_values_vector with size N
-            default_values_vector.resize(N, std::vector<double>(N_TRAITS));
+            INFO_MSG << "Default value vectors to set: N = min("<< POP_SIZE << ", " << retrievedPop.size() << ") = " << N << std::endl;
+            // Check if the size of the first individual's traits matches N_TRAITS
+            if (!retrievedPop.empty() && N_TRAITS != retrievedPop[0].size()) {
+                INFO_MSG << "Mismatch between N_TRAITS and the size of the first retrieved population vector. Expected: "
+                         << N_TRAITS << ", but got: " << retrievedPop[0].size() << ". Setting N to 0." << std::endl;
+                N = 0;
+            }
+
+            // Check if N is less than the existing length of default_values_vector before resizing
+            if (N < default_values_vector.size()) {
+                INFO_MSG << "Keeping " << default_values_vector.size()-N << " pre-existing default values due to smaller N = " << N << std::endl;
+            } else {
+                default_values_vector.resize(N, std::vector<double>(N_TRAITS));
+            }
+
             // Loop through each individual up to N
             for (size_t i = 0; i < N; i++) {
-                // Assuming retrievedPop is a collection of vector-like structures representing individuals
-                for (size_t j = 0; j < N_TRAITS && j < retrievedPop[i].size(); j++) {
-                    // Assign the trait values from the retrieved population to default_values_vector
+                for (size_t j = 0; j < N_TRAITS; j++) {
                     default_values_vector[i][j] = retrievedPop[i][j];
                 }
             }
+
             std::stringstream msgStream;
             msgStream << "Loaded the following default value vectors from Redis with init job ID: " << redisInitJobID << std::endl;
-            for (const auto& vec : default_values_vector) {
+            for (size_t i = 0; i < N; i++) {
                 msgStream << "(";
-                for (size_t j = 0; j < vec.size(); ++j) {
-                    msgStream << vec[j];
-                    if (j < vec.size() - 1) msgStream << ", ";
+                for (size_t j = 0; j < default_values_vector[i].size(); ++j) {
+                    msgStream << default_values_vector[i][j];
+                    if (j < default_values_vector[i].size() - 1) msgStream << ", ";
                 }
                 msgStream << ")" << std::endl;
             }
+            // Additionally, print the kept value vectors separately if N < existing length of default_values_vector
+            if (N < default_values_vector.size()) {
+                msgStream << "Pre-existing default values kept:" << std::endl;
+                for (size_t i = N; i < default_values_vector.size(); i++) {
+                    msgStream << "(";
+                    for (size_t j = 0; j < default_values_vector[i].size(); ++j) {
+                        msgStream << default_values_vector[i][j];
+                        if (j < default_values_vector[i].size() - 1) msgStream << ", ";
+                    }
+                    msgStream << ")" << std::endl;
+                }
+            }
+
             INFO_MSG << msgStream.str();
         }
+
 
         RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
         if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
