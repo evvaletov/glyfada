@@ -10,6 +10,8 @@
 #include <cstdlib>
 
 #include <algorithm>
+#include <stdexcept>
+#include <chrono>
 
 #include <vector>
 #include <string>
@@ -117,12 +119,13 @@ public:
                const std::string &single_category_parameters, const std::string &program_directory,
                const std::string &program_file, const std::string &config_file,
                const std::vector<std::string> &dependency_files,
-               int islandId = -1, int timeout_seconds = 60 * 30)
+               int islandId = -1, int timeout_seconds = 60 * 30, int evaluation_minimal_time = 15)
         : evaluator(evaluator), source_command(source_command), parameter_names(parameter_names),
           single_category_parameters(single_category_parameters),
           program_directory(program_directory), program_file(program_file), config_file(config_file),
           dependency_files(
-              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId), timeout_seconds(timeout_seconds) {
+              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId), timeout_seconds(timeout_seconds),
+          evaluation_minimal_time(evaluation_minimal_time) {
     }
 
     void operator()(GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> &_vec) override {
@@ -135,10 +138,26 @@ public:
                 // std::cout << "parameter_values[" << i << "] = " << parameter_values[i] << std::endl;
             }
 
-            // Call run_g4beamline or run_cosy with the appropriate arguments
+            auto start = std::chrono::steady_clock::now();
+
+            // Call the evaluator function
             std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file,
                                                     dependency_files, parameter_names,
                                                     parameter_values, single_category_parameters, timeout_seconds);
+
+            auto end = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
+
+
+            // Update evaluation time tracking
+            total_evaluation_time += elapsed;
+            evaluation_count++;
+
+            // Check if the average evaluation time is below the limit and we have enough evaluations
+            if ((total_evaluation_time / evaluation_count < evaluation_minimal_time) && (evaluation_count > 10)) {
+                std::cerr << "Error: Average evaluation time below " << evaluation_minimal_time << " seconds after " << evaluation_count << " evaluations." << std::endl;
+                exit(999);
+            }
 
             std::stringstream msgStream;
             int mpiRank;
@@ -189,6 +208,9 @@ private:
     std::vector<std::string> &dependency_files;
     int islandId;
     int timeout_seconds;
+    int evaluation_minimal_time;
+    long long total_evaluation_time;
+    int evaluation_count;
 };
 
 // TODO DONE: check if in eoNormalVecMutation the sigma argument scaled by the range: yes
@@ -323,6 +345,7 @@ int main(int argc, char *argv[]) {
     double P_CHANGE = json_data.value("p_change", 1.0);
     std::string EVALUATOR = json_data.value("evaluator", "cosy");
     unsigned int TIMEOUT_MINUTES = json_data.value("timeout_minutes", 20);
+    unsigned int EVALUATION_MINIMAL_TIME = json_data.value("timein_seconds", 15);
     std::string SOURCE_COMMAND = json_data.value("source_command", "");
     bool PRINT_ALL_RESULTS = json_data.value("print_all_results", false);
 
@@ -704,9 +727,9 @@ int main(int argc, char *argv[]) {
     } else if (mode == "MPI") {
         // objective functions evaluation
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
+                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
         SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 2, 60 * TIMEOUT_MINUTES);
+                                                 program_directory, program_file, config_file, dependency_files, 2, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
         eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
@@ -1016,9 +1039,7 @@ int main(int argc, char *argv[]) {
         if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
 
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES);
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 2, 60 * TIMEOUT_MINUTES);
+                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
         eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);

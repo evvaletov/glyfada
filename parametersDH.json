@@ -1,8 +1,9 @@
 {
-  "omp_num_threads": 16,
+  "omp_num_threads": 10,
   "mode": "redis",
   "evaluator": "dh",
   "timeout_minutes": 20,
+  "timein_minutes": 15,
   "program_file": "model.py",
   "source_command": "source ~/.zshrc > /dev/null && eval \"$(conda shell.bash hook)\" && conda activate dh060",
   "config_file": "",
@@ -10,9 +11,9 @@
   "program_directory": "/home/evaletov/deephyper060/LER/convergeorbits_new/",
   "dependency_files": [
   ],
-  "popSize": 32,
+  "popSize": 10,
   "maxGen": 5,
-  "maxTime": 15,
+  "maxTime": 10,
   "runLimitType": "maxTime",
   "eta_c": 20.0,
   "sigma": 0.1,
