@@ -125,7 +125,7 @@ public:
           program_directory(program_directory), program_file(program_file), config_file(config_file),
           dependency_files(
               const_cast<vector<std::string> &>(dependency_files)), islandId(islandId), timeout_seconds(timeout_seconds),
-          evaluation_minimal_time(evaluation_minimal_time) {
+          evaluation_minimal_time(evaluation_minimal_time), total_evaluation_time(0), evaluation_count(0) {
     }
 
     void operator()(GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> &_vec) override {
@@ -155,8 +155,16 @@ public:
 
             // Check if the average evaluation time is below the limit and we have enough evaluations
             if ((total_evaluation_time / evaluation_count < evaluation_minimal_time) && (evaluation_count > 10)) {
-                std::cerr << "Error: Average evaluation time below " << evaluation_minimal_time << " seconds after " << evaluation_count << " evaluations." << std::endl;
+                ERROR_MSG << "Error: Average evaluation time below " << evaluation_minimal_time << " seconds after " << evaluation_count << " evaluations." << std::endl;
                 exit(999);
+            } else if (elapsed < evaluation_minimal_time) {
+                std::stringstream warnMsgStream;
+                warnMsgStream << "Warning: Evaluation completed in less than " << evaluation_minimal_time << " seconds. Parameters for this evaluation: ";
+                for (size_t i = 0; i < N_TRAITS; ++i) {
+                    warnMsgStream << parameter_names[i] << ": " << parameter_values[i];
+                    if (i < N_TRAITS - 1) warnMsgStream << ", ";
+                }
+                WARN_MSG << warnMsgStream.str() << std::endl;
             }
 
             std::stringstream msgStream;
