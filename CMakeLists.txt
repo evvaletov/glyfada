@@ -52,7 +52,7 @@ set(PARADISEO_LIB_DIR "${PARADISEO_ROOT}/build/lib" CACHE PATH "Path to Paradise
 
 find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
-find_package(Boost 1.84 REQUIRED COMPONENTS filesystem system mpi serialization)
+find_package(Boost 1.84 REQUIRED COMPONENTS filesystem system mpi serialization HINTS ${BOOST_ROOT})
 find_package(OpenSSL REQUIRED)
 find_library(EO_LIBRARY eo HINTS ${PARADISEO_LIB_DIR} REQUIRED)
 find_library(EO_UTILS_LIBRARY eoutils HINTS ${PARADISEO_LIB_DIR} REQUIRED)

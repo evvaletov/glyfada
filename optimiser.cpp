@@ -256,6 +256,9 @@ int main(int argc, char *argv[]) {
     std::string redisJobID = "";
     std::string redisInitJobID = "";
     bool redisWriteAll = false;
+    bool redisUseInitJob = false;
+    bool loadedFromRedisJson = false;
+
 
     /*if (my_node != nullptr) {
         // Print MPI Rank at the beginning of each line
@@ -362,63 +365,58 @@ int main(int argc, char *argv[]) {
     std::string mode = json_data.value("mode", "multistart");
     INFO_MSG << "Operation mode set to: " << mode << std::endl;
 
- if (mode.find("redis") != std::string::npos) {
-    // Mode contains "redis", attempt to load Redis credentials and job_ID from the main config
-    if (json_data.contains("redis_ip") && json_data.contains("redis_port")) {
-        redisIP = json_data["redis_ip"];
-        redisPort = json_data["redis_port"];
-        if (json_data.contains("redis_password")) {
-            redisPassword = json_data["redis_password"];
-        }
-        if (json_data.contains("redis_job_ID")) {
-            redisJobID = json_data["redis_job_ID"];
-        }
-        if (json_data.contains("redis_init_job_ID")) {
-            redisInitJobID = json_data["redis_init_job_ID"]; // Load initial population job ID
-        }
-        if (json_data.contains("redis_max_pop_size")) {
-            redisMaxPopSize = json_data["redis_max_pop_size"].get<int>(); // Load max population size
-        }
-        if (json_data.contains("redis_write_all")) {
-            redisWriteAll = json_data["redis_write_all"].get<bool>();
-        }
-    } else {
-        // Redis credentials and job_ID not found in main config, load from redis.json
-        try {
-            nlohmann::json redis_config = read_json_file("redis.json"); // Replace with your redis config file name
+try {
+    // Attempt to load Redis configuration from redis.json
+    nlohmann::json redis_config = read_json_file("redis.json");
 
-            redisIP = redis_config["redis_ip"];
-            redisPort = redis_config["redis_port"];
-            if (redis_config.contains("redis_password")) {
-                redisPassword = redis_config["redis_password"];
-            }
-            if (redis_config.contains("redis_job_ID")) {
-                redisJobID = redis_config["redis_job_ID"];
-            }
-            if (redis_config.contains("redis_init_job_ID")) {
-                redisInitJobID = redis_config["redis_init_job_ID"]; // Load initial population job ID
-            }
-            if (redis_config.contains("redis_max_pop_size")) {
-                redisMaxPopSize = redis_config["redis_max_pop_size"].get<int>(); // Load max population size
-            }
-            if (!json_data.contains("redis_write_all") && redis_config.contains("redis_write_all")) {
-                redisWriteAll = redis_config["redis_write_all"].get<bool>();
-            }
-        } catch (std::exception& e) {
-            std::cerr << "Error loading Redis credentials and job_ID from redis.json: " << e.what() << std::endl;
-            return EXIT_FAILURE;
-        }
+    if (!redis_config.empty()) {
+        loadedFromRedisJson = true;
     }
-    // Check if redisJobID is set
-    if (redisJobID.empty()) {
-        std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
-        return EXIT_FAILURE;
-    }
-    INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
-    INFO_MSG << "Redis init jobID = " << (redisInitJobID.empty() ? "Not set" : redisInitJobID) << std::endl; // Report the initial population job ID
-    INFO_MSG << "Redis max population size = " << redisMaxPopSize << std::endl; // Report the max population size
-    INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
+
+    if (redis_config.contains("redis_ip")) { redisIP = redis_config["redis_ip"]; }
+    if (redis_config.contains("redis_port")) { redisPort = redis_config["redis_port"]; }
+    if (redis_config.contains("redis_password")) { redisPassword = redis_config["redis_password"]; }
+    if (redis_config.contains("redis_job_ID")) { redisJobID = redis_config["redis_job_ID"]; }
+    if (redis_config.contains("redis_init_job_ID")) { redisInitJobID = redis_config["redis_init_job_ID"]; }
+    if (redis_config.contains("redis_max_pop_size")) { redisMaxPopSize = redis_config["redis_max_pop_size"].get<int>(); }
+    if (redis_config.contains("redis_write_all")) { redisWriteAll = redis_config["redis_write_all"].get<bool>(); }
+    if (redis_config.contains("redis_use_init_job")) { redisUseInitJob = redis_config["redis_use_init_job"].get<bool>(); }
+} catch (std::exception& e) {
+    std::cerr << "Notice: redis.json not found or contains errors; attempting to load from main configuration. Error: " << e.what() << std::endl;
 }
+
+auto overrideConfig = [&loadedFromRedisJson](auto oldValue, const auto& newValue, const std::string& key) {
+        if (loadedFromRedisJson && oldValue != newValue) {
+            std::cerr << "Warning: Overriding " << key << " from main configuration." << std::endl;
+        }
+        return newValue; // Return by value
+};
+
+// Override with values from json_data if present, with warnings for overrides
+if (json_data.contains("redis_ip")) { redisIP = overrideConfig(redisIP, json_data["redis_ip"], "redis_ip"); }
+if (json_data.contains("redis_port")) { redisPort = overrideConfig(redisPort, json_data["redis_port"], "redis_port"); }
+if (json_data.contains("redis_password")) { redisPassword = overrideConfig(redisPassword, json_data["redis_password"], "redis_password"); }
+if (json_data.contains("redis_job_ID")) { redisJobID = overrideConfig(redisJobID, json_data["redis_job_ID"], "redis_job_ID"); }
+if (json_data.contains("redis_init_job_ID")) { redisInitJobID = overrideConfig(redisInitJobID, json_data["redis_init_job_ID"], "redis_init_job_ID"); }
+if (json_data.contains("redis_max_pop_size")) { redisMaxPopSize = overrideConfig(redisMaxPopSize, json_data["redis_max_pop_size"].get<int>(), "redis_max_pop_size"); }
+if (json_data.contains("redis_write_all")) { redisWriteAll = overrideConfig(redisWriteAll, json_data["redis_write_all"].get<bool>(), "redis_write_all"); }
+if (json_data.contains("redis_use_init_job")) { redisUseInitJob = overrideConfig(redisUseInitJob, json_data["redis_use_init_job"].get<bool>(), "redis_use_init_job"); }
+
+// Adjust redisUseInitJob based on redisInitJobID being empty
+redisUseInitJob = !redisInitJobID.empty() && redisUseInitJob;
+
+// Check if redisJobID is set
+if (redisJobID.empty()) {
+    std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
+    return EXIT_FAILURE;
+}
+
+INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
+INFO_MSG << "Redis init jobID = " << (redisInitJobID.empty() ? "Not set" : redisInitJobID) << std::endl;
+INFO_MSG << "Redis use init job: " << (redisUseInitJob ? "Yes" : "No") << std::endl;
+INFO_MSG << "Redis max population size = " << redisMaxPopSize << std::endl;
+INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
+
 
     // Check if interactive mode parameter was provided in command line
     if (parser.isItThere(interactiveParam)) {
@@ -984,7 +982,7 @@ int main(int argc, char *argv[]) {
         //manager1->addTestIndividual("{\"value\": \"0 0 0 8 BD0:-2.44735 BD1:1.36736 BD2:-12.9505 BD3:16.3355 BF0:4.82603 BF1:-9.55672 BF2:7.16492 BF3:-3.41765 \"}");
 
         INFO_MSG << "redisInitJobID: " << redisInitJobID << std::endl;
-        if (!redisInitJobID.empty()) {
+        if (redisUseInitJob) {
             auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
             if(use_default_values) manager0->setParameters(parameter_names, default_values); else manager0->setParameters(parameter_names);
 
