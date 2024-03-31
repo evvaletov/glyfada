@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include <chrono>
+#include <iostream>
 #include <mpi.h>
 #include <thread>
 
@@ -77,9 +78,24 @@ std::string trim(const std::string &str) {
     return str.substr(first, (last - first + 1));
 }
 
+bool starts_with(const std::string& str, const std::string& prefix) {
+    if (str.length() < prefix.length()) {
+        return false;
+    }
+    return str.substr(0, prefix.length()) == prefix;
+}
+
+bool ends_with(const std::string& str, const std::string& suffix) {
+    if (str.length() < suffix.length()) {
+        return false;
+    }
+    return str.substr(str.length() - suffix.length(), suffix.length()) == suffix;
+}
+
 std::vector<std::string> parseArguments(const std::string &s) {
     std::vector<std::string> arguments;
     bool inParentheses = false;
+    bool inBrackets = false; // Added to track square brackets
     std::string currentArg;
 
     for (char c: s) {
@@ -89,7 +105,13 @@ std::vector<std::string> parseArguments(const std::string &s) {
         } else if (c == ')') {
             inParentheses = false;
             currentArg += c;
-        } else if (c == ',' && !inParentheses) {
+        } else if (c == '[') {
+            inBrackets = true;
+            currentArg += c;
+        } else if (c == ']') {
+            inBrackets = false;
+            currentArg += c;
+        } else if (c == ',' && !inParentheses && !inBrackets) {
             arguments.push_back(currentArg);
             currentArg.clear();
         } else {
@@ -101,8 +123,38 @@ std::vector<std::string> parseArguments(const std::string &s) {
         arguments.push_back(currentArg);
     }
 
+    // Adjust to check both types of brackets
+    for (std::string& arg : arguments) {
+        int openParenthesesCount = 0;
+        int closeParenthesesCount = 0;
+        int openBracketsCount = 0;
+        int closeBracketsCount = 0;
+
+        for (char c : arg) {
+            if (c == '(') openParenthesesCount++;
+            else if (c == ')') closeParenthesesCount++;
+            else if (c == '[') openBracketsCount++;
+            else if (c == ']') closeBracketsCount++;
+        }
+
+        // Check for unbalanced brackets/parentheses and remove the last unbalanced one
+        if (closeParenthesesCount > openParenthesesCount && arg.back() == ')') {
+            arg.pop_back();
+            closeParenthesesCount--;
+            }
+        if (closeBracketsCount > openBracketsCount && arg.back() == ']') {
+            arg.pop_back();
+            closeBracketsCount--;
+        }
+        if ((starts_with(arg, "((") && ends_with(arg, "))")) || (starts_with(arg, "([") && ends_with(arg, "])"))
+            && (closeParenthesesCount == openParenthesesCount) && (closeBracketsCount == openBracketsCount)) {
+            arg = arg.substr(1, arg.size() - 2);
+        }
+    }
+
     return arguments;
 }
+
 
 std::string currentDateTime() {
     auto now = std::chrono::system_clock::now();

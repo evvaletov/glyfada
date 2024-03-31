@@ -159,6 +159,47 @@ std::vector<double> exec(const std::string &cmd, int n) {
     return std::vector<double>(n, -10000.0);
 }
 
+void appendSingleCategoryParameters(std::ostringstream& params_stream, const std::string& single_category_parameters) {
+    // Check if there's already content in params_stream (other than opening '{')
+    if (single_category_parameters.length() > 1) {
+        params_stream << ", ";
+    }
+
+    std::istringstream iss(single_category_parameters);
+    std::string token;
+    while (getline(iss, token, ' ')) {
+        auto equalsPos = token.find('=');
+        if (equalsPos != std::string::npos) {
+            std::string key = token.substr(0, equalsPos);
+            std::string value = token.substr(equalsPos + 1);
+
+            // Check if the value is numeric or string
+            bool isNumeric = !value.empty() && std::find_if(value.begin(),
+                value.end(), [](unsigned char c) { return !std::isdigit(c) && c != '.'; }) == value.end();
+
+            params_stream << "\"" << key << "\": ";
+            if (isNumeric) {
+                params_stream << value;
+            } else {
+                // Remove potential quotes around string values
+                if (value.front() == '"' && value.back() == '"') {
+                    value = value.substr(1, value.length() - 2);
+                }
+                params_stream << "\"" << value << "\"";
+            }
+
+            params_stream << ", ";
+        }
+    }
+
+    // Remove the last comma and space if any single category parameters were added
+    std::string params_str = params_stream.str();
+    if (!single_category_parameters.empty()) {
+        params_stream.str("");
+        params_stream << params_str.substr(0, params_str.length() - 2);
+    }
+}
+
 std::vector<double> run_dh(const std::string &source_command, const std::string &program_directory,
                            const std::string &program_file, const std::string &config_file,
                            const std::vector<std::string> &dependency_files,
@@ -181,6 +222,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
         }
         if (i < parameter_names.size() - 1) params_stream << ", ";
     }
+    if (single_category_parameters.length() > 1) appendSingleCategoryParameters(params_stream, single_category_parameters);
     params_stream << "}";
 
     std::string escapedJSONParams = escapeForShell(params_stream.str());

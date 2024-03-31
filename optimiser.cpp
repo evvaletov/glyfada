@@ -6,6 +6,7 @@
 #include <mpi/eoMpi.h>
 #include <eoSecondsElapsedTrackGenContinue.h>
 
+#include <neighborhood/moRealVectorNeighbor.h>
 #include <utils/eoParser.h>
 #include <cstdlib>
 
@@ -222,14 +223,18 @@ private:
 };
 
 // TODO DONE: check if in eoNormalVecMutation the sigma argument scaled by the range: yes
-// TODO: implement hybrid island method
-// TODO: implement MPI parallelization
+// TODO DONE: implement hybrid island method
+// TODO DONE: implement MPI parallelization
 // TODO: track statistics for the quality and speed of optimization
 // TODO: implement hyperparameter optimization
 // TODO: manage loads between islands if running on same MPI rank
 // TODO: implement the possibility of using a different number of OMP threads for each island
-// TODO: merge regular and island-based codes (set mode from parameter file)
+// TODO DONE: merge regular and island-based codes (set mode from parameter file)
 // TODO: implement a Ctrl-C handler that gracefully shuts down the optimisation
+// TODO: DeepHyper: add optional hyperparameters
+// TODO: implement LS like NSGAII
+// TODO: implement checkpointing, file <-> redis saves
+// TODO: revise so that redis doesn't fail if get or put is done before auth
 
 
 int main(int argc, char *argv[]) {
@@ -365,58 +370,59 @@ int main(int argc, char *argv[]) {
     std::string mode = json_data.value("mode", "multistart");
     INFO_MSG << "Operation mode set to: " << mode << std::endl;
 
-try {
-    // Attempt to load Redis configuration from redis.json
-    nlohmann::json redis_config = read_json_file("redis.json");
+    if (mode == "redis") {
+        try {
+            // Attempt to load Redis configuration from redis.json
+            nlohmann::json redis_config = read_json_file("redis.json");
 
-    if (!redis_config.empty()) {
-        loadedFromRedisJson = true;
-    }
+            if (!redis_config.empty()) {
+                loadedFromRedisJson = true;
+            }
 
-    if (redis_config.contains("redis_ip")) { redisIP = redis_config["redis_ip"]; }
-    if (redis_config.contains("redis_port")) { redisPort = redis_config["redis_port"]; }
-    if (redis_config.contains("redis_password")) { redisPassword = redis_config["redis_password"]; }
-    if (redis_config.contains("redis_job_ID")) { redisJobID = redis_config["redis_job_ID"]; }
-    if (redis_config.contains("redis_init_job_ID")) { redisInitJobID = redis_config["redis_init_job_ID"]; }
-    if (redis_config.contains("redis_max_pop_size")) { redisMaxPopSize = redis_config["redis_max_pop_size"].get<int>(); }
-    if (redis_config.contains("redis_write_all")) { redisWriteAll = redis_config["redis_write_all"].get<bool>(); }
-    if (redis_config.contains("redis_use_init_job")) { redisUseInitJob = redis_config["redis_use_init_job"].get<bool>(); }
-} catch (std::exception& e) {
-    std::cerr << "Notice: redis.json not found or contains errors; attempting to load from main configuration. Error: " << e.what() << std::endl;
-}
-
-auto overrideConfig = [&loadedFromRedisJson](auto oldValue, const auto& newValue, const std::string& key) {
-        if (loadedFromRedisJson && oldValue != newValue) {
-            std::cerr << "Warning: Overriding " << key << " from main configuration." << std::endl;
+            if (redis_config.contains("redis_ip")) { redisIP = redis_config["redis_ip"]; }
+            if (redis_config.contains("redis_port")) { redisPort = redis_config["redis_port"]; }
+            if (redis_config.contains("redis_password")) { redisPassword = redis_config["redis_password"]; }
+            if (redis_config.contains("redis_job_ID")) { redisJobID = redis_config["redis_job_ID"]; }
+            if (redis_config.contains("redis_init_job_ID")) { redisInitJobID = redis_config["redis_init_job_ID"]; }
+            if (redis_config.contains("redis_max_pop_size")) { redisMaxPopSize = redis_config["redis_max_pop_size"].get<int>(); }
+            if (redis_config.contains("redis_write_all")) { redisWriteAll = redis_config["redis_write_all"].get<bool>(); }
+            if (redis_config.contains("redis_use_init_job")) { redisUseInitJob = redis_config["redis_use_init_job"].get<bool>(); }
+        } catch (std::exception& e) {
+            std::cerr << "Notice: redis.json not found or contains errors; attempting to load from main configuration. Error: " << e.what() << std::endl;
         }
-        return newValue; // Return by value
-};
 
-// Override with values from json_data if present, with warnings for overrides
-if (json_data.contains("redis_ip")) { redisIP = overrideConfig(redisIP, json_data["redis_ip"], "redis_ip"); }
-if (json_data.contains("redis_port")) { redisPort = overrideConfig(redisPort, json_data["redis_port"], "redis_port"); }
-if (json_data.contains("redis_password")) { redisPassword = overrideConfig(redisPassword, json_data["redis_password"], "redis_password"); }
-if (json_data.contains("redis_job_ID")) { redisJobID = overrideConfig(redisJobID, json_data["redis_job_ID"], "redis_job_ID"); }
-if (json_data.contains("redis_init_job_ID")) { redisInitJobID = overrideConfig(redisInitJobID, json_data["redis_init_job_ID"], "redis_init_job_ID"); }
-if (json_data.contains("redis_max_pop_size")) { redisMaxPopSize = overrideConfig(redisMaxPopSize, json_data["redis_max_pop_size"].get<int>(), "redis_max_pop_size"); }
-if (json_data.contains("redis_write_all")) { redisWriteAll = overrideConfig(redisWriteAll, json_data["redis_write_all"].get<bool>(), "redis_write_all"); }
-if (json_data.contains("redis_use_init_job")) { redisUseInitJob = overrideConfig(redisUseInitJob, json_data["redis_use_init_job"].get<bool>(), "redis_use_init_job"); }
+        auto overrideConfig = [&loadedFromRedisJson](auto oldValue, const auto& newValue, const std::string& key) {
+            if (loadedFromRedisJson && oldValue != newValue) {
+                std::cerr << "Warning: Overriding " << key << " from main configuration." << std::endl;
+            }
+            return newValue; // Return by value
+        };
 
-// Adjust redisUseInitJob based on redisInitJobID being empty
-redisUseInitJob = !redisInitJobID.empty() && redisUseInitJob;
+        // Override with values from json_data if present, with warnings for overrides
+        if (json_data.contains("redis_ip")) { redisIP = overrideConfig(redisIP, json_data["redis_ip"], "redis_ip"); }
+        if (json_data.contains("redis_port")) { redisPort = overrideConfig(redisPort, json_data["redis_port"], "redis_port"); }
+        if (json_data.contains("redis_password")) { redisPassword = overrideConfig(redisPassword, json_data["redis_password"], "redis_password"); }
+        if (json_data.contains("redis_job_ID")) { redisJobID = overrideConfig(redisJobID, json_data["redis_job_ID"], "redis_job_ID"); }
+        if (json_data.contains("redis_init_job_ID")) { redisInitJobID = overrideConfig(redisInitJobID, json_data["redis_init_job_ID"], "redis_init_job_ID"); }
+        if (json_data.contains("redis_max_pop_size")) { redisMaxPopSize = overrideConfig(redisMaxPopSize, json_data["redis_max_pop_size"].get<int>(), "redis_max_pop_size"); }
+        if (json_data.contains("redis_write_all")) { redisWriteAll = overrideConfig(redisWriteAll, json_data["redis_write_all"].get<bool>(), "redis_write_all"); }
+        if (json_data.contains("redis_use_init_job")) { redisUseInitJob = overrideConfig(redisUseInitJob, json_data["redis_use_init_job"].get<bool>(), "redis_use_init_job"); }
 
-// Check if redisJobID is set
-if (redisJobID.empty()) {
-    std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
-    return EXIT_FAILURE;
-}
+        // Adjust redisUseInitJob based on redisInitJobID being empty
+        redisUseInitJob = !redisInitJobID.empty() && redisUseInitJob;
 
-INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
-INFO_MSG << "Redis init jobID = " << (redisInitJobID.empty() ? "Not set" : redisInitJobID) << std::endl;
-INFO_MSG << "Redis use init job: " << (redisUseInitJob ? "Yes" : "No") << std::endl;
-INFO_MSG << "Redis max population size = " << redisMaxPopSize << std::endl;
-INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
+        // Check if redisJobID is set
+        if (redisJobID.empty()) {
+            std::cerr << "Error: Redis job_ID is not set in configuration." << std::endl;
+            return EXIT_FAILURE;
+        }
 
+        INFO_MSG << "Redis jobID = " << redisJobID << std::endl;
+        INFO_MSG << "Redis init jobID = " << (redisInitJobID.empty() ? "Not set" : redisInitJobID) << std::endl;
+        INFO_MSG << "Redis use init job: " << (redisUseInitJob ? "Yes" : "No") << std::endl;
+        INFO_MSG << "Redis max population size = " << redisMaxPopSize << std::endl;
+        INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
+    }
 
     // Check if interactive mode parameter was provided in command line
     if (parser.isItThere(interactiveParam)) {
@@ -491,16 +497,31 @@ INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << s
                     default_values.push_back(param["default_value"].get<double>());
                 }
             } else if (param_type == "categorical") {
-                // If it's a categorical parameter, check how many categories it has
-                std::vector<std::string> categories = param["values"].get<std::vector<std::string> >();
+                std::vector<std::string> categories = param["values"].get<std::vector<std::string>>();
 
                 if (categories.size() == 1) {
-                    // If it has only one category, add it to the single-category parameters string
+                    // For a single-category parameter
                     single_category_parameters += param["name"].get<std::string>() + "=" + categories[0] + " ";
+
+                    // Check for a mismatch between the default value and the category
+                    if (use_default_values && param.contains("default_value")) {
+                        std::string default_value = param["default_value"].get<std::string>();
+                        if (default_value != categories[0]) {
+                            WARN_MSG << "Warning: Default value '" << default_value
+                                      << "' does not match the sole category '" << categories[0]
+                                      << "' for parameter '" << param["name"].get<std::string>() << "'." << std::endl;
+                        }
+                    }
                 } else {
-                    // If it has more than one category, output a "not implemented" message and abort
-                    std::cerr << "Categorical parameters with more than one category are not implemented." << std::endl;
-                    exit(EXIT_FAILURE);
+                    // For multiple categories, use the default value if available
+                    if (param.contains("default_value")) {
+                        std::string default_value = param["default_value"].get<std::string>();
+                        single_category_parameters += param["name"].get<std::string>() + "=" + default_value + " ";
+                        WARN_MSG << "Warning: Categorical parameters with more than one category are set to their defaults." << std::endl;
+                    } else {
+                        ERROR_MSG << "Warning: Categorical parameters with more than one category are set to their defaults." << std::endl;
+                        return EXIT_FAILURE;
+                    }
                 }
             }
         }
@@ -534,89 +555,126 @@ INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << s
                 //    std::cout << "Argument: " << arg << std::endl; // Debug print
                 //}
 
-                if (args.size() == 2 && args[0].find('[') != std::string::npos) {
-                    // Handle single-category parameters
-                    size_t categoryStart = args[0].find_first_of("[\"");
-                    size_t categoryEnd = args[0].find_last_of("\"]");
-                    if (categoryStart != std::string::npos && categoryEnd != std::string::npos && categoryStart !=
-                        categoryEnd) {
-                        std::string category = args[0].substr(categoryStart + 1, categoryEnd - categoryStart - 1);
+                if (args.size() >= 2) {
+                    size_t openBracket = args[0].find('[');
+                    size_t closeBracket = args[0].find(']');
+                    //INFO_MSG << "openBracket = " << openBracket << std::endl;
+                    //INFO_MSG << "closeBracket = " << closeBracket << std::endl;
+                    if (openBracket != std::string::npos && openBracket < closeBracket) {
+                        // Confirmed args[0] is likely a categorical parameter specification
+                        // Now, determine if it's a single-category categorical parameter
+                        size_t commaIndex = args[0].find(',', openBracket);
+                        bool hasComma = commaIndex != std::string::npos && commaIndex < closeBracket;
+                        //INFO_MSG << "args[0] = " << args[0] << std::endl;
+                        //if (args.size()>=2) INFO_MSG << "args[1] = " << args[1] << std::endl;
+                        //if (args.size()>=3) INFO_MSG << "args[2] = " << args[2] << std::endl;
+                        //INFO_MSG << "hasComma = " << hasComma << std::endl;
+
+                        // Extract parameter name
                         std::string name = args[1].substr(args[1].find_first_of("\"\'") + 1,
-                                                          args[1].find_last_of("\"\'") - args[1].find_first_of("\"\'") -
-                                                          1);
-                        single_category_parameters += name + "=" + category + " ";
-                    }
-                } else {
-                    if (args.size() < 2 || args.size() > 3) continue; // Ensure correct number of arguments
+                                                          args[1].find_last_of("\"\'") - args[1].find_first_of("\"\'") - 1);
 
-                    std::string range = args[0];
-                    //std::cout << "Range string: " << range << std::endl; // Debug print
-
-                    size_t openParen = range.find("(");
-                    size_t closeParen = range.find(")");
-                    if (openParen == std::string::npos || closeParen == std::string::npos) continue;
-                    // Ensure parentheses are found
-
-                    std::string minMax = range.substr(openParen + 1, closeParen - openParen - 1);
-                    std::istringstream rangeStream(minMax);
-                    std::string min_str_raw, max_str_raw;
-                    std::getline(rangeStream, min_str_raw, ',');
-                    std::getline(rangeStream, max_str_raw);
-
-                    std::string min_str = trim(min_str_raw);
-                    std::string max_str = trim(max_str_raw);
-
-                    //std::cout << "Trimmed Min string: " << min_str << ", Trimmed Max string: " << max_str << std::endl; // Debug print
-
-                    if (!isNumber(min_str)) {
-                        ERROR_MSG << "Non-numeric lower bound encountered: " << min_str << std::endl;
-                        return EXIT_FAILURE;
-                    }
-                    if (!isNumber(max_str)) {
-                        ERROR_MSG << "Non-numeric upper bound encountered: " << max_str << std::endl;
-                        return EXIT_FAILURE;
-                    }
-                    double min_val = std::stod(min_str);
-                    double max_val = std::stod(max_str);
-                    //std::cout << "Parsed Min: " << min_val << ", Max: " << max_val << std::endl; // Debug print
-
-
-                    min_values.push_back(min_val);
-                    max_values.push_back(max_val);
-
-                    std::string name = args[1];
-                    //std::cout << "Name argument: " << name << std::endl; // Debug print
-
-                    size_t nameStart = name.find_first_of("\"\'");
-                    size_t nameEnd = name.find_last_of("\"\'");
-                    if (nameStart == std::string::npos || nameEnd == std::string::npos || nameStart == nameEnd)
-                        continue;
-
-                    parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
-                    //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
-
-                    // Extracting the default value (if use_default_values is true)
-                    if (use_default_values && args.size() == 3) {
-                        std::string defaultValueStr = args[2];
-                        size_t defaultStart = defaultValueStr.find("default_value=");
-                        if (defaultStart != std::string::npos) {
-                            defaultValueStr = defaultValueStr.substr(defaultStart + strlen("default_value="));
-                            defaultValueStr = trim(defaultValueStr);
-                            // TODO: the following is a workaround for parseArguments leaving a final ")". Fix this.
-                            // Remove a single trailing parenthesis if present
-                            if (!defaultValueStr.empty() && defaultValueStr.back() == ')') {
-                                defaultValueStr.pop_back();
+                        if (hasComma) {
+                            // Check for the presence of a default_value in the arguments
+                            std::string defaultValue;
+                            bool foundDefaultValue = false;
+                            for (const auto& arg : args) {
+                                size_t equalsIndex = arg.find("default_value=");
+                                if (equalsIndex != std::string::npos) {
+                                    defaultValue = arg.substr(equalsIndex + strlen("default_value="));
+                                    foundDefaultValue = true;
+                                    break;
+                                }
                             }
-                            if (!isNumber(defaultValueStr)) {
-                                ERROR_MSG << "Non-numeric default value encountered: " << defaultValueStr << std::endl;
+
+                            if (!foundDefaultValue) {
+                                ERROR_MSG << "Error: Categorical parameter with multiple categories and no default value provided." << std::endl;
+                                exit(EXIT_FAILURE);
+                            } else {
+                                // Treat this as a single-category categorical parameter, using the default value as the category
+                                single_category_parameters += name + "=" + defaultValue + " ";
+                            }
+                        } else {
+                            // It's a single-category parameter without a comma, process normally
+                            std::string category = args[0].substr(openBracket + 1, closeBracket - openBracket - 1);
+                            single_category_parameters += name + "=" + category + " ";
+                        }
+                    }  else {
+                        if (args.size() < 2 || args.size() > 3) continue; // Ensure correct number of arguments
+
+                        std::string range = args[0];
+                        //std::cout << "Range string: " << range << std::endl; // Debug print
+
+                        //INFO_MSG << "args[0] = " << args[0] << std::endl;
+                        //if (args.size()>=2) INFO_MSG << "args[1] = " << args[1] << std::endl;
+                        //if (args.size()>=3) INFO_MSG << "args[2] = " << args[2] << std::endl;
+
+                        size_t openParen = range.find("(");
+                        size_t closeParen = range.find(")");
+                        if (openParen == std::string::npos || closeParen == std::string::npos) continue;
+                        // Ensure parentheses are found
+
+                        std::string minMax = range.substr(openParen + 1, closeParen - openParen - 1);
+                        std::istringstream rangeStream(minMax);
+                        std::string min_str_raw, max_str_raw;
+                        std::getline(rangeStream, min_str_raw, ',');
+                        std::getline(rangeStream, max_str_raw);
+
+                        std::string min_str = trim(min_str_raw);
+                        std::string max_str = trim(max_str_raw);
+
+                        //std::cout << "Trimmed Min string: " << min_str << ", Trimmed Max string: " << max_str << std::endl; // Debug print
+
+                        if (!isNumber(min_str)) {
+                            ERROR_MSG << "Non-numeric lower bound encountered: " << min_str << std::endl;
+                            return EXIT_FAILURE;
+                        }
+                        if (!isNumber(max_str)) {
+                            ERROR_MSG << "Non-numeric upper bound encountered: " << max_str << std::endl;
+                            return EXIT_FAILURE;
+                        }
+                        double min_val = std::stod(min_str);
+                        double max_val = std::stod(max_str);
+                        //std::cout << "Parsed Min: " << min_val << ", Max: " << max_val << std::endl; // Debug print
+
+
+                        min_values.push_back(min_val);
+                        max_values.push_back(max_val);
+
+                        std::string name = args[1];
+                        //std::cout << "Name argument: " << name << std::endl; // Debug print
+
+                        size_t nameStart = name.find_first_of("\"\'");
+                        size_t nameEnd = name.find_last_of("\"\'");
+                        if (nameStart == std::string::npos || nameEnd == std::string::npos || nameStart == nameEnd)
+                            continue;
+
+                        parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
+                        //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
+
+                        // Extracting the default value (if use_default_values is true)
+                        if (use_default_values && args.size() == 3) {
+                            std::string defaultValueStr = args[2];
+                            size_t defaultStart = defaultValueStr.find("default_value=");
+                            if (defaultStart != std::string::npos) {
+                                defaultValueStr = defaultValueStr.substr(defaultStart + strlen("default_value="));
+                                defaultValueStr = trim(defaultValueStr);
+                                // TODO: the following is a workaround for parseArguments leaving a final ")". Fix this.
+                                // Remove a single trailing parenthesis if present
+                                if (!defaultValueStr.empty() && defaultValueStr.back() == ')') {
+                                    defaultValueStr.pop_back();
+                                }
+                                if (!isNumber(defaultValueStr)) {
+                                    ERROR_MSG << "Non-numeric default value encountered: " << defaultValueStr << std::endl;
+                                    return EXIT_FAILURE;
+                                }
+                                double defaultValue = std::stod(defaultValueStr);
+                                default_values.push_back(defaultValue);
+                            } else {
+                                // Handle the case where no default value is specified
+                                ERROR_MSG << "No default value specified for parameter: " << parameter_names.back() << std::endl;
                                 return EXIT_FAILURE;
                             }
-                            double defaultValue = std::stod(defaultValueStr);
-                            default_values.push_back(defaultValue);
-                        } else {
-                            // Handle the case where no default value is specified
-                            ERROR_MSG << "No default value specified for parameter: " << parameter_names.back() << std::endl;
-                            return EXIT_FAILURE;
                         }
                     }
                 }
@@ -1047,6 +1105,16 @@ INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << s
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
+
+        // LS
+        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-5, 10, false, 5, 4);
+        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
+        moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
+        moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
+        //TODO:  revise continuator
+        moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
+
+        // NSGAII
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
         eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
         eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
@@ -1087,8 +1155,15 @@ INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << s
                 eval1,  // Evaluation function
                 transform);
             cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
+        } else if (RUN_LIMIT_TYPE == "LStest") {
+            eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init1(bounds);
+            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > popt(POP_SIZE, init1);
+            INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
+            LSalgo(popt);
+            pops.push_back(popt);
+            cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
         } else {
-            throw std::runtime_error("Invalid RUN_LIMIT_TYPE specified");
+            throw std::runtime_error("Invalid RUN_LIMIT_TYPE specified (redis mode)");
         }
 
         if (manager->getIsMainInstance() or redisWriteAll) {
