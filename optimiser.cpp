@@ -235,6 +235,7 @@ private:
 // TODO: implement LS like NSGAII
 // TODO: implement checkpointing, file <-> redis saves
 // TODO: revise so that redis doesn't fail if get or put is done before auth
+// TODO: make the minimum number of scaling attempts non-changeable in ULS
 
 
 int main(int argc, char *argv[]) {
@@ -360,6 +361,7 @@ int main(int argc, char *argv[]) {
     double SIGMA = json_data.value("sigma", 0.1);
     double P_CHANGE = json_data.value("p_change", 1.0);
     std::string EVALUATOR = json_data.value("evaluator", "cosy");
+    std::string ALGORITHM = json_data.value("algorithm", "auto");
     unsigned int TIMEOUT_MINUTES = json_data.value("timeout_minutes", 20);
     unsigned int EVALUATION_MINIMAL_TIME = json_data.value("timein_seconds", 15);
     std::string SOURCE_COMMAND = json_data.value("source_command", "");
@@ -727,16 +729,17 @@ int main(int argc, char *argv[]) {
         std::cout << "MAX_GEN: " << MAX_GEN << "\n";
         std::cout << "MAX_TIME: " << MAX_TIME << "\n";
         std::cout << "RUN_LIMIT_TYPE: " << RUN_LIMIT_TYPE << "\n";
-        std::cout << "M_EPSILON: " << M_EPSILON << "\n";
-        std::cout << "P_CROSS: " << P_CROSS << "\n";
-        std::cout << "P_MUT: " << P_MUT << "\n";
-        std::cout << "ETA_C: " << ETA_C << "\n";
-        std::cout << "SIGMA: " << SIGMA << "\n";
-        std::cout << "P_CHANGE: " << P_CHANGE << "\n";
+        std::cout << "NSGAII_M_EPSILON: " << M_EPSILON << "\n";
+        std::cout << "NSGAII_P_CROSS: " << P_CROSS << "\n";
+        std::cout << "NSGAII_P_MUT: " << P_MUT << "\n";
+        std::cout << "NSGAII_ETA_C: " << ETA_C << "\n";
+        std::cout << "NSGAII_SIGMA: " << SIGMA << "\n";
+        std::cout << "NSGAII_P_CHANGE: " << P_CHANGE << "\n";
         std::cout << "MIGRATION_PERIOD: " << MIGRATION_PERIOD << "\n";
         std::cout << "TOURNAMENT_SIZE: " << TOURNAMENT_SIZE << "\n";
         std::cout << "SELECTION_NUMBER: " << SELECTION_NUMBER << "\n";
         std::cout << "Evaluator: " << EVALUATOR << "\n";
+        std::cout << "Algorithm: " << ALGORITHM << "\n";
         std::cout << "Source command: " << SOURCE_COMMAND << "\n";
         std::cout << "Program file: " << program_file << "\n";
         std::cout << "Config file: " << config_file << "\n";
@@ -771,6 +774,7 @@ int main(int argc, char *argv[]) {
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
     eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
     eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+    eoRealInitBounded<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> init2(bounds);
     SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop;
 
     if (mode == "multistart") {
@@ -1039,8 +1043,8 @@ int main(int argc, char *argv[]) {
         //manager1->addTestIndividual("{\"value\": \"0 0 0 8 BD0:-2.43735 BD1:1.37736 BD2:-12.9505 BD3:16.3355 BF0:4.82603 BF1:-9.55672 BF2:7.16492 BF3:-3.41765 \"}");
         //manager1->addTestIndividual("{\"value\": \"0 0 0 8 BD0:-2.44735 BD1:1.36736 BD2:-12.9505 BD3:16.3355 BF0:4.82603 BF1:-9.55672 BF2:7.16492 BF3:-3.41765 \"}");
 
-        INFO_MSG << "redisInitJobID: " << redisInitJobID << std::endl;
         if (redisUseInitJob) {
+            INFO_MSG << "Initialising from redis job ID: " << redisInitJobID << std::endl;
             auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
             if(use_default_values) manager0->setParameters(parameter_names, default_values); else manager0->setParameters(parameter_names);
 
@@ -1050,7 +1054,7 @@ int main(int argc, char *argv[]) {
 
             // Determine N, the number of individuals to initialize
             size_t N = std::min(static_cast<size_t>(POP_SIZE), retrievedPop.size());
-            INFO_MSG << "Default value vectors to set: N = min("<< POP_SIZE << ", " << retrievedPop.size() << ") = " << N << std::endl;
+            INFO_MSG << "Population to set: N = min("<< POP_SIZE << ", " << retrievedPop.size() << ") = " << N << std::endl;
             // Check if the size of the first individual's traits matches N_TRAITS
             if (!retrievedPop.empty() && N_TRAITS != retrievedPop[0].size()) {
                 INFO_MSG << "Mismatch between N_TRAITS and the size of the first retrieved population vector. Expected: "
@@ -1060,7 +1064,7 @@ int main(int argc, char *argv[]) {
 
             // Check if N is less than the existing length of default_values_vector before resizing
             if (N < default_values_vector.size()) {
-                INFO_MSG << "Keeping " << default_values_vector.size()-N << " pre-existing default values due to smaller N = " << N << std::endl;
+                INFO_MSG << "Keeping " << default_values_vector.size()-N << " local default values due to smaller N = " << N << std::endl;
             } else {
                 default_values_vector.resize(N, std::vector<double>(N_TRAITS));
             }
@@ -1099,15 +1103,18 @@ int main(int argc, char *argv[]) {
         }
 
 
-        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager =
+                RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
+                                                                                         redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
         if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
 
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
-
         // LS
-        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-5, 10, false, 5, 4);
+        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-5,
+                                                                                                                     30, false,
+                                                                                                                     2,5, 4);
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
         moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
         moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
@@ -1115,8 +1122,18 @@ int main(int argc, char *argv[]) {
         moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
 
         // NSGAII
+        // Define a pointer to the base continuator type
+        eoContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* continuatorPtr = nullptr;
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
         eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
+        // Decide which continuator to use based on RUN_LIMIT_TYPE
+        if (RUN_LIMIT_TYPE == "maxGen") {
+            continuatorPtr = &continuatorGen;
+            INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << *continuatorPtr << std::endl;
+        } else if (RUN_LIMIT_TYPE == "maxTime") {
+            continuatorPtr = &continuatorTime;
+            INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << *continuatorPtr << std::endl;
+        }
         eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
         Topology<Complete> topo;
         Redis_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo, 0);
@@ -1133,38 +1150,36 @@ int main(int argc, char *argv[]) {
         // // Integration policy
         eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
 
-        if (RUN_LIMIT_TYPE == "maxGen") {
-            INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << continuatorGen << std::endl;
-            pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
-                1, topo, POP_SIZE, default_values_vector, init,
-                intPolicy_1,  // Integration policy
-                migPolicy_1,  // Migration policy
-                HOMOGENEOUS_ISLAND,
-                continuatorGen,  // Stopping criteria
-                eval1,  // Evaluation function
-                transform);
-            cout << "Continuator status on MPI rank " << rank << ": " << continuatorGen << endl;
-        } else if (RUN_LIMIT_TYPE == "maxTime") {
-            INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
-            pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
-                1, topo, POP_SIZE, default_values_vector, init,
-                intPolicy_1,  // Integration policy
-                migPolicy_1,  // Migration policy
-                HOMOGENEOUS_ISLAND,
-                continuatorTime,  // Stopping criteria
-                eval1,  // Evaluation function
-                transform);
-            cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
-        } else if (RUN_LIMIT_TYPE == "LStest") {
-            eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init1(bounds);
-            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > popt(POP_SIZE, init1);
-            INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
-            LSalgo(popt);
-            pops.push_back(popt);
-            cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
+        if (continuatorPtr != nullptr) {
+            // Now use continuatorPtr which points to the selected continuator
+            if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
+                pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
+                        1, topo, POP_SIZE, default_values_vector, init,
+                        intPolicy_1,  // Integration policy
+                        migPolicy_1,  // Migration policy
+                        HOMOGENEOUS_ISLAND,
+                        *continuatorPtr,  // Stopping criteria
+                        eval1,  // Evaluation function
+                        transform);
+            } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
+                pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
+                        moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>,  Redis_IslandModel>(
+                        1, topo, POP_SIZE, default_values_vector, init,
+                        intPolicy_1,  // Integration policy
+                        migPolicy_1,  // Migration policy
+                        HOMOGENEOUS_ISLAND,
+                        *continuatorPtr,  // Stopping criteria
+                        eval1,  // Evaluation function
+                        archLS,
+                        explorer,
+                        select);
+            }
+            cout << "Continuator status on MPI rank " << rank << ": " << *continuatorPtr << endl;
         } else {
-            throw std::runtime_error("Invalid RUN_LIMIT_TYPE specified (redis mode)");
+            // Handle the error case where no continuator is selected
+            std::cerr << "Error: RUN_LIMIT_TYPE is not correctly specified." << std::endl;
         }
+
 
         if (manager->getIsMainInstance() or redisWriteAll) {
             auto retrievedPop = manager->retrieveEntirePopulation();
