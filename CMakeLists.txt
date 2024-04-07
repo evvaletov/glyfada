@@ -9,6 +9,8 @@ set(CMAKE_CXX_FLAGS "-fopenmp")
 if(EXISTS "/global/cfs/cdirs")
 	# Configuration if /global/cfs/cdirs exists
 	# execute_process(COMMAND module load craype-x86-milan PrgEnv-gnu openmpi gcc)
+	set(MPI_C_COMPILER "mpicc")
+	set(MPI_CXX_COMPILER "mpicxx")
 	set(BOOST_ROOT "/global/cfs/cdirs/m509/paradiseo/boost_1_84_0/bin")
 	set(BOOST_LIBRARYDIR "${BOOST_ROOT}/lib")
 	set(PARADISEO_ROOT "/global/cfs/cdirs/m509/paradiseo/paradiseo")
@@ -24,6 +26,8 @@ elseif(EXISTS "/srv/software/el8/x86_64/eb/OpenMPI/4.1.5-GCC-12.3.0/bin/mpicc")
 	set(CPP_REDIS_ROOT "/work1/beamopt/paradiseo/cpp_redis")
 	message(STATUS "Configuring for TeV cluster")
 elseif(EXISTS "/psi/home")
+	set(MPI_C_COMPILER "mpicc")
+	set(MPI_CXX_COMPILER "mpicxx")
 	set(BOOST_ROOT "/psi/home/valetov_e/paradiseo/boost")
 	set(BOOST_LIBRARYDIR "${BOOST_ROOT}/lib")
 	set(PARADISEO_ROOT "/psi/home/valetov_e/paradiseo/paradiseo")
@@ -31,6 +35,8 @@ elseif(EXISTS "/psi/home")
 	message(STATUS "Configuring for Merlin")
 else()
 	# Default configuration
+	set(MPI_C_COMPILER "mpicc")
+	set(MPI_CXX_COMPILER "mpicxx")
 	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g -fopenmp")
 	set(CMAKE_BUILD_TYPE Debug)
 	set(BOOST_ROOT "/opt/boost_1_84_0")
@@ -113,7 +119,7 @@ target_include_directories(optimiser PRIVATE
 link_directories(${PARADISEO_LIB_DIR}
 		${BOOST_LIBRARYDIR})
 
-target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} ${REDIS_LIBRARY} ${TACOPIE_LIBRARY} OpenSSL::Crypto MPI::MPI_CXX stdc++fs)
+target_link_libraries(optimiser PRIVATE OpenMP::OpenMP_CXX ${EO_LIBRARY} ${EO_UTILS_LIBRARY} ${Boost_LIBRARIES} ${LIBXML2_LIBRARIES} ${REDIS_LIBRARY} ${TACOPIE_LIBRARY} OpenSSL::Crypto  stdc++fs)
 
 install(TARGETS optimiser DESTINATION bin)
 

@@ -3,6 +3,7 @@
 #include <es/eoRealInitBounded.h>
 #include <es/eoRealOp.h>
 #include <es/eoNormalMutation.h>
+
 #include <mpi/eoMpi.h>
 #include <eoSecondsElapsedTrackGenContinue.h>
 
@@ -19,7 +20,9 @@
 #include <json.hpp>
 #include <fstream>
 #include <smp>
+
 #include "mpi/implMpi.h"
+
 
 #include <execinfo.h>
 #include <cxxabi.h>
@@ -254,6 +257,7 @@ int main(int argc, char *argv[]) {
     int num_mpi_ranks;
     MPI_Comm_size(MPI_COMM_WORLD, &num_mpi_ranks);
     INFO_MSG << "MPI rank: " << rank << endl;
+    INFO_MSG << "MPI ranks: " << num_mpi_ranks << endl;
 
     std::string redisIP;
     std::string redisPassword = "";
@@ -287,11 +291,17 @@ int main(int argc, char *argv[]) {
     auto now = std::chrono::high_resolution_clock::now();
     // Convert it to a duration since the epoch
     auto duration = now.time_since_epoch();
-    // Narrow it down to microseconds and convert to an unsigned integer
-    unsigned seed = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+    // Narrow it down to microseconds
+    auto timeSeed = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+    // Get the process ID
+    auto pid = getpid();
+    std::random_device rd;
+    unsigned seed2 = rd();
+    // Combine time seed, PID, rank, and random seed device input
+    std::size_t hashSeed = std::hash<long long>()(timeSeed) ^ std::hash<int>()(pid) ^ std::hash<int>()(rank) ^ std::hash<int>()(seed2);
     // Seed the random number generator
-    eo::rng.reseed(seed+rank);
-    INFO_MSG << "Seed: " << seed+rank << std::endl;
+    eo::rng.reseed(hashSeed);
+    INFO_MSG << "Seed: " << hashSeed << std::endl;
     //eo::rng.reseed(2 - rank);
 
     eoParser parser(argc, argv, "Glyfada"); // for user-parameter reading
@@ -371,6 +381,17 @@ int main(int argc, char *argv[]) {
     // modes: multistart, homogeneous
     std::string mode = json_data.value("mode", "multistart");
     INFO_MSG << "Operation mode set to: " << mode << std::endl;
+
+    std::string ALGORITHM_STR = ALGORITHM;
+    if (ALGORITHM=="hybrid1") {
+        if (rank==0) {
+            ALGORITHM = "ULS";
+            ALGORITHM_STR = "hybrid1, rank " + to_string(rank) + " -> ULS";
+        } else {
+            ALGORITHM = "NSGAII";
+            ALGORITHM_STR = "hybrid1, rank " + to_string(rank) + " -> NSGAII";
+        }
+    }
 
     if (mode == "redis") {
         try {
@@ -739,7 +760,7 @@ int main(int argc, char *argv[]) {
         std::cout << "TOURNAMENT_SIZE: " << TOURNAMENT_SIZE << "\n";
         std::cout << "SELECTION_NUMBER: " << SELECTION_NUMBER << "\n";
         std::cout << "Evaluator: " << EVALUATOR << "\n";
-        std::cout << "Algorithm: " << ALGORITHM << "\n";
+        std::cout << "Algorithm: " << ALGORITHM_STR << "\n";
         std::cout << "Source command: " << SOURCE_COMMAND << "\n";
         std::cout << "Program file: " << program_file << "\n";
         std::cout << "Config file: " << config_file << "\n";
@@ -792,20 +813,101 @@ int main(int argc, char *argv[]) {
             MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
         nsgaII(pop);
-    } else if (mode == "MPI") {
-        // objective functions evaluation
+    } else if (mode == "MPI" or mode == "redis")  {
+        if (mode == "redis") {
+            if (redisUseInitJob) {
+//TODO: test this
+                std::stringstream msgStream;
+                INFO_MSG << "Initialising from redis job ID: " << redisInitJobID << std::endl;
+                auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+                if(use_default_values) manager0->setParameters(parameter_names, default_values); else manager0->setParameters(parameter_names);
+
+                // Retrieve the entire population from Redis
+                auto retrievedPop = manager0->retrieveEntirePopulation();
+                INFO_MSG << "Retrieved population size: " << retrievedPop.size() << std::endl;
+
+                // Determine total desired population size considering both retrieved population and local default values
+                size_t totalDesiredSize = retrievedPop.size() + default_values_vector.size();
+                size_t N = std::min(static_cast<size_t>(POP_SIZE), totalDesiredSize);
+
+                INFO_MSG << "Population to set: N = min(" << POP_SIZE << ", " << totalDesiredSize << ") = " << N << std::endl;
+
+                // Resize default_values_vector to accommodate up to N individuals
+                default_values_vector.resize(N, std::vector<double>(N_TRAITS));
+
+                // Determine the start index in default_values_vector where retrieved population values should be placed
+                size_t startIndex = std::max(0, static_cast<int>(N) - static_cast<int>(retrievedPop.size()));
+
+                // Fill in values from the retrieved population with the necessary shift
+                for (size_t i = 0; i < retrievedPop.size() && (startIndex + i) < N; ++i) {
+                    for (size_t j = 0; j < N_TRAITS; ++j) {
+                        default_values_vector[startIndex + i][j] = retrievedPop[i][j];
+                    }
+                }
+
+                msgStream << "Loaded the following default value vectors from Redis:" << std::endl;
+                for (size_t i = startIndex; i < N; ++i) {
+                    msgStream << "(";
+                    for (size_t j = 0; j < default_values_vector[i].size(); ++j) {
+                        msgStream << default_values_vector[i][j] << (j < default_values_vector[i].size() - 1 ? ", " : "");
+                    }
+                    msgStream << ")" << std::endl;
+                }
+
+// Separately print any local default vectors that were preserved due to size constraints
+                if (startIndex > 0) { // Indicates that there are local default values
+                    msgStream << "Pre-existing local default values preserved:" << std::endl;
+                    for (size_t i = 0; i < startIndex && i < default_values_vector.size(); ++i) {
+                        msgStream << "(";
+                        for (size_t j = 0; j < default_values_vector[i].size(); ++j) {
+                            msgStream << default_values_vector[i][j] << (j < default_values_vector[i].size() - 1 ? ", " : "");
+                        }
+                        msgStream << ")" << std::endl;
+                    }
+                }
+            }
+
+            RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager =
+                    RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
+                                                                                             redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+            if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
+        }
+
         SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval2(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 2, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
+        // LS
+        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-5,
+                                                                                                                     30, false,
+                                                                                                                     1,5, 4);
+        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
+        moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
+        moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
+        //TODO:  revise continuator
+        moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
+
+        // NSGAII
+        // Define a pointer to the base continuator type
+        eoContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* continuatorPtr = nullptr;
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
         eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
+        // Decide which continuator to use based on RUN_LIMIT_TYPE
+        if (RUN_LIMIT_TYPE == "maxGen") {
+            continuatorPtr = &continuatorGen;
+            INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << *continuatorPtr << std::endl;
+        } else if (RUN_LIMIT_TYPE == "maxTime") {
+            continuatorPtr = &continuatorTime;
+            INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << *continuatorPtr << std::endl;
+        }
         eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
         Topology<Complete> topo;
-        MPI_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
 
-        // ISLAND 1
+        if (mode == "MPI") {
+            MPI_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
+        } else if (mode == "redis") {
+            Redis_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo, 0);
+        }
+
         std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy
@@ -817,109 +919,111 @@ int main(int argc, char *argv[]) {
         migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
         // // Integration policy
         eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
-        // build NSGA-II
         // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
         // TODO: learn about C++ templates
-        //Island<moeoNSGAII,System<N_OBJECTIVES, N_TRAITS> > nsgaII_2(pop2, intPolicy_2, migPolicy_2, MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
-        /*eoGenContinue continuator = RUN_LIMIT_TYPE == "maxGen" ? continuatorGen : continuatorTime;
-        Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_2(
-            pop1, // Population
-            intPolicy_1, // Integration policy
-            migPolicy_1, // Migration policy
-            continuator, // Stopping criteria
-            eval1, // Evaluation function
-            transform // Transformation operator combining crossover and mutation
-        );*/
-
-        /*// ISLAND 2
-        // generate initial population
-        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop1(POP_SIZE, init);
-        //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop1(pop10);
-        // // Emigration policy
-        // // // Element 1
-        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(1);
-        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(15);
-        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, 5);
-        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
-        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
-        // // Integration policy
-        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
-        // build NSGA-II
-        Island<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII_1(
-            pop1, // Population
-            intPolicy_1, // Integration policy
-            migPolicy_1, // Migration policy
-            continuator, // Stopping criteria
-            eval1, // Evaluation function
-            transform // Transformation operator combining crossover and mutation
-        );*/
 
         try
         {
-
-            if (RUN_LIMIT_TYPE == "maxGen") {
-                INFO_MSG << "Worker " << rank << " (maxGen): continuator: " << continuatorGen << std::endl;
-                pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
-                    num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
-                    intPolicy_1,  // Integration policy
-                    migPolicy_1,  // Migration policy
-                    HOMOGENEOUS_ISLAND,
-                    continuatorGen,  // Stopping criteria
-                    eval1,  // Evaluation function
-                    transform);
-                cout << "Continuator status on MPI rank " << rank << ": " << continuatorGen << endl;
-            } else if (RUN_LIMIT_TYPE == "maxTime") {
-                INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << continuatorTime << std::endl;
-                pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
-                    num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
-                    intPolicy_1,  // Integration policy
-                    migPolicy_1,  // Migration policy
-                    HOMOGENEOUS_ISLAND,
-                    continuatorTime,  // Stopping criteria
-                    eval1,  // Evaluation function
-                    transform);
-                cout << "Continuator status on MPI rank " << rank << ": " << continuatorTime << endl;
+            if (continuatorPtr != nullptr) {
+                // Now use continuatorPtr which points to the selected continuator
+                if (mode == "MPI") {
+                    if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
+                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
+                                num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
+                                intPolicy_1,  // Integration policy
+                                migPolicy_1,  // Migration policy
+                                HOMOGENEOUS_ISLAND,
+                                *continuatorPtr,  // Stopping criteria
+                                eval1,  // Evaluation function
+                                transform);
+                    } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
+                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
+                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>, MPI_IslandModel>(
+                                num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
+                                intPolicy_1,  // Integration policy
+                                migPolicy_1,  // Migration policy
+                                HOMOGENEOUS_ISLAND,
+                                *continuatorPtr,  // Stopping criteria
+                                eval1,  // Evaluation function
+                                archLS,
+                                explorer,
+                                select);
+                    } else {
+                        // Handle the error case where no continuator is selected
+                        std::cerr << "Error: Invalid algorithm: " << ALGORITHM << std::endl;
+                        return EXIT_FAILURE;
+                    }
+                } else if (mode == "redis") {
+                    if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
+                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
+                                1, topo, POP_SIZE, default_values_vector, init,
+                                intPolicy_1,  // Integration policy
+                                migPolicy_1,  // Migration policy
+                                HOMOGENEOUS_ISLAND,
+                                *continuatorPtr,  // Stopping criteria
+                                eval1,  // Evaluation function
+                                transform);
+                    } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
+                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
+                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>, Redis_IslandModel>(
+                                1, topo, POP_SIZE, default_values_vector, init,
+                                intPolicy_1,  // Integration policy
+                                migPolicy_1,  // Migration policy
+                                HOMOGENEOUS_ISLAND,
+                                *continuatorPtr,  // Stopping criteria
+                                eval1,  // Evaluation function
+                                archLS,
+                                explorer,
+                                select);
+                    } else {
+                        // Handle the error case where no continuator is selected
+                        std::cerr << "Error: Invalid algorithm: " << ALGORITHM << std::endl;
+                        return EXIT_FAILURE;
+                    }
+                }
+                cout << "Continuator status on MPI rank " << rank << ": " << *continuatorPtr << endl;
             } else {
-                throw std::runtime_error("Invalid RUN_LIMIT_TYPE specified");
+                std::cerr << "Error: RUN_LIMIT_TYPE is not correctly specified." << std::endl;
+                return EXIT_FAILURE;
             }
-
-            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pops[rank]);
-            cout << "Arhive update on MPI rank " << rank << ": " << arch1(pops[rank]) << endl;
-
-            arch1.sortedPrintOn(cout);
         }
         catch(exception& e)
         {
             cout << "Exception: " << e.what() << '\n';
         }
 
+        if (mode == "MPI") {
+            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pops[rank]);
+            cout << "Arhive update on MPI rank " << rank << ": " << arch1(pops[rank]) << endl;
+            arch1.sortedPrintOn(cout);
+
+        } else if (mode == "redis") {
+            RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager =
+                    RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
+                                                                                             redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+            if (manager->getIsMainInstance() or redisWriteAll) {
+                auto retrievedPop = manager->retrieveEntirePopulation();
+                //if (!redisWriteAll) manager->clearPopulation();
+                std::cout << "Retrieved pop: " << retrievedPop.size() << std::endl;
+                eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> &mainPop = pops[0];
+                cout << "Main pop: " << mainPop.size() << endl;
+                mainPop.append(retrievedPop);
+                pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > >(mainPop);
+                moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+                //cout << "Pop size before archiving: " << pops[0].size() << endl;
+                cout << "Archive update: " << arch1(pop) << endl;
+
+                arch1.sortedPrintOn(cout);
+            }
+        };
+
 
         //model.add(nsgaII_1);
         //model.add(nsgaII_2);
-
         //model();
         std::cout << "Model run complete on mpi rank " << rank << std::endl;
 
-        /*if (rank==0) {
-            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
-            std::cout << "Archive update island 1 on mpi rank " << rank << std::endl;
-            cout << "Arhive update 1: " << arch1(pop1) << endl;
-            arch1.sortedPrintOn(cout);
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
-        }
-
-        if (rank==1) {
-            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch2;
-            std::cout << "Archive update island 2 on mpi rank " << rank << std::endl;
-            cout << "Arhive update 2: " << arch2(pop2) << endl;
-            arch2.sortedPrintOn(cout);
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop2);
-        }*/
-
-        //std::cout << "Joining pops on mpi rank " << rank << std::endl;
-        ///pop1.append(pop2);
-        //pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop1);
     } else if (mode == "redistest") {
         RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test10", (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
 
@@ -1037,7 +1141,7 @@ int main(int argc, char *argv[]) {
         }
 
          //return EXIT_SUCCESS;
-    } else if (mode=="redis") {
+    } else if (false) {
 
         //auto manager1 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
         //manager1->addTestIndividual("{\"value\": \"0 0 0 8 BD0:-2.43735 BD1:1.37736 BD2:-12.9505 BD3:16.3355 BF0:4.82603 BF1:-9.55672 BF2:7.16492 BF3:-3.41765 \"}");
@@ -1142,51 +1246,56 @@ int main(int argc, char *argv[]) {
         // // Integration policy
         eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
 
-        if (continuatorPtr != nullptr) {
-            // Now use continuatorPtr which points to the selected continuator
-            if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
-                pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
-                        1, topo, POP_SIZE, default_values_vector, init,
-                        intPolicy_1,  // Integration policy
-                        migPolicy_1,  // Migration policy
-                        HOMOGENEOUS_ISLAND,
-                        *continuatorPtr,  // Stopping criteria
-                        eval1,  // Evaluation function
-                        transform);
-            } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
-                pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
-                        moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>,  Redis_IslandModel>(
-                        1, topo, POP_SIZE, default_values_vector, init,
-                        intPolicy_1,  // Integration policy
-                        migPolicy_1,  // Migration policy
-                        HOMOGENEOUS_ISLAND,
-                        *continuatorPtr,  // Stopping criteria
-                        eval1,  // Evaluation function
-                        archLS,
-                        explorer,
-                        select);
+            try {
+                if (continuatorPtr != nullptr) {
+                    // Now use continuatorPtr which points to the selected continuator
+                    if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
+                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
+                                1, topo, POP_SIZE, default_values_vector, init,
+                                intPolicy_1,  // Integration policy
+                                migPolicy_1,  // Migration policy
+                                HOMOGENEOUS_ISLAND,
+                                *continuatorPtr,  // Stopping criteria
+                                eval1,  // Evaluation function
+                                transform);
+                    } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
+                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
+                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>, Redis_IslandModel>(
+                                1, topo, POP_SIZE, default_values_vector, init,
+                                intPolicy_1,  // Integration policy
+                                migPolicy_1,  // Migration policy
+                                HOMOGENEOUS_ISLAND,
+                                *continuatorPtr,  // Stopping criteria
+                                eval1,  // Evaluation function
+                                archLS,
+                                explorer,
+                                select);
+                    }
+                    cout << "Continuator status on MPI rank " << rank << ": " << *continuatorPtr << endl;
+                } else {
+                    // Handle the error case where no continuator is selected
+                    std::cerr << "Error: RUN_LIMIT_TYPE is not correctly specified." << std::endl;
+                }
+            } catch(exception& e) {
+                cout << "Exception: " << e.what() << '\n';
+            };
+
+
+            if (manager->getIsMainInstance() or redisWriteAll) {
+                auto retrievedPop = manager->retrieveEntirePopulation();
+                //if (!redisWriteAll) manager->clearPopulation();
+                std::cout << "Retrieved pop: " << retrievedPop.size() << std::endl;
+                eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> &mainPop = pops[0];
+                cout << "Main pop: " << mainPop.size() << endl;
+                mainPop.append(retrievedPop);
+                pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > >(mainPop);
+                moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+                //cout << "Pop size before archiving: " << pops[0].size() << endl;
+                cout << "Archive update: " << arch1(pop) << endl;
+
+                arch1.sortedPrintOn(cout);
             }
-            cout << "Continuator status on MPI rank " << rank << ": " << *continuatorPtr << endl;
-        } else {
-            // Handle the error case where no continuator is selected
-            std::cerr << "Error: RUN_LIMIT_TYPE is not correctly specified." << std::endl;
-        }
 
-
-        if (manager->getIsMainInstance() or redisWriteAll) {
-            auto retrievedPop = manager->retrieveEntirePopulation();
-            //if (!redisWriteAll) manager->clearPopulation();
-            std::cout << "Retrieved pop: " << retrievedPop.size() << std::endl;
-            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pops[0];
-            cout << "Main pop: " << mainPop.size() << endl;
-            mainPop.append(retrievedPop);
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (mainPop);
-            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
-            //cout << "Pop size before archiving: " << pops[0].size() << endl;
-            cout << "Archive update: " << arch1(pop) << endl;
-
-            arch1.sortedPrintOn(cout);
-        }
     }
 
     moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch;
