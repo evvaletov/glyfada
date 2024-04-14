@@ -239,6 +239,7 @@ private:
 // TODO: implement checkpointing, file <-> redis saves
 // TODO: revise so that redis doesn't fail if get or put is done before auth
 // TODO: make the minimum number of scaling attempts non-changeable in ULS
+// TODO: implement auto-adjustment of bounds
 
 
 int main(int argc, char *argv[]) {
@@ -877,9 +878,9 @@ int main(int argc, char *argv[]) {
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
         // LS
-        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-5,
+        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-3,
                                                                                                                      30, false,
-                                                                                                                     1,5, 4);
+                                                                                                                     1,2, 2);
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
         moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
         moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
