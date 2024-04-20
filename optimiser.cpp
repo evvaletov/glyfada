@@ -240,6 +240,18 @@ private:
 // TODO: revise so that redis doesn't fail if get or put is done before auth
 // TODO: make the minimum number of scaling attempts non-changeable in ULS
 // TODO: implement auto-adjustment of bounds
+// TODO: LS -- explore different islands of solutions
+// TODO: EO -- explore different islands of solutions
+// TODO: LS -- if f looks like const in the neighborhood, stop exploring at that point or increase the delta r
+// TODO: LS -- gradually expand LS region if not successful in 2-3 generations
+// TODO: LS -- implement fast single-objective search in regions dominated by one objective
+// TODO: LS -- implement priorities for objectives (first focus on optimising one, then another, etc.)
+// TODO: LS -- implement JSON parameters
+// TODO: LS -- if no suitable individual, then random search instead of LS
+// TODO: LS -- use different exploreres based on conditions.
+// TODO: LS -- uniform exploration using cosines
+// TODO: LS -- inertia
+// TODO: LS -- ADAM optimiser
 
 
 int main(int argc, char *argv[]) {
@@ -878,14 +890,24 @@ int main(int argc, char *argv[]) {
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
         // LS
+        std::vector<unsigned int> minScalingExplored = {1, 2, 3};
         RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-3,
                                                                                                                      30, false,
-                                                                                                                     1,2, 2);
+                                                                                                                     minScalingExplored,3, 5);
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
         moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
-        moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
-        //TODO:  revise continuator
-        moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
+        // Create explicit std::vector<double> objects
+        std::vector<double> vec1 = {-5000, 0, 0};
+        std::vector<double> vec2 = {0, 0, -5000};
+        // Create ObjectiveVectors from the std::vector objects
+        GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector objVec1(vec1);
+        GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector objVec2(vec2);
+        // Now you can use these ObjectiveVectors in your excludeList
+        std::vector<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector> excludeList = {objVec1, objVec2};
+       // Create an instance of moeoBestUnvisitedSelect with the exclusion list
+        moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2, excludeList);
+        //moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
+        //moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
 
         // NSGAII
         // Define a pointer to the base continuator type
