@@ -470,6 +470,7 @@ int main(int argc, char *argv[]) {
             ALGORITHM_STR = "hybrid1, rank " + to_string(rank) + " -> NSGAII";
         }
     }
+    INFO_MSG << "Algorithm set to: " << ALGORITHM_STR << std::endl;
 
     if (mode == "redis") {
         try {
