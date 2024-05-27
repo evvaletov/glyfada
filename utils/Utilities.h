@@ -35,4 +35,9 @@ std::string getCurrentThreadId();
 
 std::string getFilenameSuffix();
 
+std::vector<int> calculate_mpi_partitions(const std::vector<std::string>& partition_data, int num_mpi_ranks);
+int get_this_partition(const std::vector<int>& partitions, int rank);
+
+
+
 #endif //UTILS_H
