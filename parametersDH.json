@@ -1,6 +1,19 @@
 {
   "omp_num_threads": 10,
   "mode": "MPI",
+  "MPI_island_partitions": ["1", "remaining"],
+  "partition_0": {
+    "algorithm": "ULS",
+    "optimize_parameters": [
+      0,1,2,3
+    ]
+  },
+  "partition_1": {
+    "algorithm": "NSGAII",
+    "optimize_parameters": [
+      4,5,6,7
+    ]
+  },
   "evaluator": "dh",
   "algorithm": "hybrid1",
   "timeout_minutes": 10,
@@ -17,7 +30,7 @@
   "maxTime": 10,
   "runLimitType": "maxTime",
   "eta_c": 20.0,
-  "sigma": 0.1,
+  "sigma": 0.01,
   "p_change": 0.5,
   "mutEpsilon": 0.01,
   "pCross": 0.25,
@@ -26,6 +39,10 @@
   "tournamentSize": 15,
   "selectionNumber": 1,
   "interactive_mode": false,
+  "excludeList": [
+    [5000.0, 0.0, 0.0],
+    [0.0, 0.0, 5000.0]
+  ],
   "parameters": [
     {
       "name": "B50",

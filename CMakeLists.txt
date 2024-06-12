@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
+cmake_policy(SET CMP0144 NEW)
 project(glyfada VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -35,8 +36,8 @@ elseif(EXISTS "/psi/home")
 	message(STATUS "Configuring for Merlin")
 else()
 	# Default configuration
-	set(MPI_C_COMPILER "mpicc")
-	set(MPI_CXX_COMPILER "mpicxx")
+	set(MPI_C_COMPILER "/opt/openmpi-5.0.0/bin/mpicc")
+	set(MPI_CXX_COMPILER "/opt/openmpi-5.0.0/bin/mpic++")
 	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og -g -fopenmp")
 	set(CMAKE_BUILD_TYPE Debug)
 	set(BOOST_ROOT "/opt/boost_1_84_0")
@@ -95,11 +96,15 @@ set(SOURCE_FILES
 		utils/Utilities.h
 		utils/Utilities.cpp
 		utils/Logging.cpp
+        utils/json_utilities.h
 )
 
 add_executable(optimiser ${SOURCE_FILES})
 
 target_include_directories(optimiser PRIVATE
+		/usr/include
+    	/usr/include/c++/11
+    	/usr/include/x86_64-linux-gnu/c++/11
 		${CMAKE_CURRENT_SOURCE_DIR}
 		${PARADISEO_ROOT}/eo/src/
 		${PARADISEO_ROOT}/smp/src/topology
