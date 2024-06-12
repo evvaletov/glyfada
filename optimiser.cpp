@@ -249,7 +249,7 @@ private:
 // TODO: LS -- implement JSON parameters
 // TODO: LS -- if no suitable individual, then random search instead of LS
 // TODO: LS -- use different exploreres based on conditions.
-// TODO: LS -- uniform exploration using cosines
+// TODO DONE: LS -- uniform exploration using cosines
 // TODO: LS -- inertia
 // TODO: LS -- ADAM optimiser
 
@@ -406,6 +406,46 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    auto overrideConfig = [&loadedFromRedisJson](auto oldValue, const auto& newValue, const std::string& key) {
+        if (loadedFromRedisJson && oldValue != newValue) {
+            std::cerr << "Warning: Overriding " << key << " from main configuration." << std::endl;
+        }
+        return newValue; // Return by value
+    };
+
+    // Initialize default value for excludeList to an empty vector
+    std::vector<std::vector<double>> excludeList = json_data.value("excludeList", std::vector<std::vector<double>>{});
+    if (ALGORITHM == "ULS") {
+        // Check if excludeList is present in the partition-specific configuration and override if necessary
+        if (json_data.contains("excludeList")) {
+            auto newExcludeList = json_data["excludeList"].get<std::vector<std::vector<double>>>();
+            excludeList = overrideConfig(excludeList, newExcludeList, "excludeList");
+        }
+
+        // Log the final configuration of excludeList, handling the case of an empty list
+        if (!excludeList.empty()) {
+            std::ostringstream excludeListStr;
+            for (const auto &vec : excludeList) {
+                excludeListStr << "{";
+                for (const auto &val : vec) {
+                    excludeListStr << val << ", ";
+                }
+                // Correctly trim trailing comma and space from the inner vector string representation
+                std::string vecStr = excludeListStr.str();
+                vecStr = vecStr.substr(0, vecStr.length() - 2);
+                excludeListStr.str("");
+                excludeListStr.clear();
+                excludeListStr << vecStr << "}, ";
+            }
+            // Remove trailing comma and space from the overall string
+            std::string finalStr = excludeListStr.str();
+            finalStr = finalStr.substr(0, finalStr.length() - 2);
+            INFO_MSG << "Exclude list configured as: " << finalStr << std::endl;
+        } else {
+            INFO_MSG << "Exclude list is empty." << std::endl;
+        }
+    }
+
     if (mode == "redis") {
         try {
             // Attempt to load Redis configuration from redis.json
@@ -426,13 +466,6 @@ int main(int argc, char *argv[]) {
         } catch (std::exception& e) {
             std::cerr << "Notice: redis.json not found or contains errors; attempting to load from main configuration. Error: " << e.what() << std::endl;
         }
-
-        auto overrideConfig = [&loadedFromRedisJson](auto oldValue, const auto& newValue, const std::string& key) {
-            if (loadedFromRedisJson && oldValue != newValue) {
-                std::cerr << "Warning: Overriding " << key << " from main configuration." << std::endl;
-            }
-            return newValue; // Return by value
-        };
 
         // Override with values from json_data if present, with warnings for overrides
         if (json_data.contains("redis_ip")) { redisIP = overrideConfig(redisIP, json_data["redis_ip"], "redis_ip"); }
@@ -896,19 +929,15 @@ int main(int argc, char *argv[]) {
                                                                                                                      minScalingExplored,3, 5);
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
         moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
-        // Create explicit std::vector<double> objects
-        std::vector<double> vec1 = {-5000, 0, 0};
-        std::vector<double> vec2 = {0, 0, -5000};
-        // Create ObjectiveVectors from the std::vector objects
-        GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector objVec1(vec1);
-        GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector objVec2(vec2);
-        // Now you can use these ObjectiveVectors in your excludeList
-        std::vector<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector> excludeList = {objVec1, objVec2};
-       // Create an instance of moeoBestUnvisitedSelect with the exclusion list
-        moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2, excludeList);
+        std::vector<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector> excludeListObjectiveVector;
+        for (auto& vec : excludeList) {
+            GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector objVec(vec);
+            excludeListObjectiveVector.push_back(objVec);
+        }
+        // Create an instance of moeoBestUnvisitedSelect with the new ObjectiveVector exclusion list
+        moeoBestUnvisitedSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2, excludeListObjectiveVector);
         //moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
         //moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
-
         // NSGAII
         // Define a pointer to the base continuator type
         eoContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* continuatorPtr = nullptr;
