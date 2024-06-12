@@ -9,6 +9,9 @@
 #include <iostream>
 #include <mpi.h>
 #include <thread>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 void writeParametersToCsv(std::ofstream &file, const std::map<std::string, double> &parameters,
                           const std::vector<std::string> &parameter_names,
@@ -239,3 +242,59 @@ std::string getFilenameSuffix() {
     }
 }
 
+std::vector<int> calculate_mpi_partitions(const std::vector<std::string>& partition_data, int num_mpi_ranks) {
+    std::vector<int> partitions;
+    int total_assigned = 0;
+
+    for (const auto& part : partition_data) {
+        if (part == "remaining") {
+            // This will be calculated after knowing all other partitions
+            partitions.push_back(0);
+        } else if (part.back() == '%') {
+            double percentage = std::stod(part.substr(0, part.size() - 1)) / 100.0;
+            int count = static_cast<int>(std::round(percentage * num_mpi_ranks));
+            partitions.push_back(count);
+            total_assigned += count;
+        } else {
+            int count = std::stoi(part);
+            partitions.push_back(count);
+            total_assigned += count;
+        }
+    }
+
+    // Assign remaining processes to the 'remaining' partition, if specified
+    for (auto& part : partitions) {
+        if (part == 0) { // the placeholder for 'remaining'
+            part = num_mpi_ranks - total_assigned;
+        }
+    }
+
+    return partitions;
+}
+
+// Function to determine this_partition based on MPI rank
+int get_this_partition(const std::vector<int>& partitions, int rank) {
+    int cumulative = 0;
+    for (size_t i = 0; i < partitions.size(); ++i) {
+        cumulative += partitions[i];
+        if (rank < cumulative) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+template<typename T>
+T get_json_value(const nlohmann::json& json, const std::string& key, int this_partition, const T& default_value) {
+    std::string partition_key = "partition_" + std::to_string(this_partition);
+
+    // First try to get value from the specific partition
+    if (json.contains(partition_key) && json[partition_key].is_object()) {
+        if (json[partition_key].contains(key)) {
+            return json[partition_key][key].get<T>();
+        }
+    }
+
+    // If not found in the specific partition, fall back to the root level
+    return json.value(key, default_value);
+}

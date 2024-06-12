@@ -41,6 +41,7 @@
 #include "run_dh.h"
 //#include "mpi/SerializableBase.h"
 #include "utils/Utilities.h"
+#include "utils/json_utilities.h"
 
 #include "mpi/param.h"
 #include "mpi/schema.h"
@@ -252,7 +253,10 @@ private:
 // TODO DONE: LS -- uniform exploration using cosines
 // TODO: LS -- inertia
 // TODO: LS -- ADAM optimiser
-
+// TODO: implement reading all relevant parameters from partitions if defined
+// TODO: implement partitions also for redis and other modes
+// TODO: revise to not require an installation of deephyper
+// TODO: LS -- implement parameterisation in JSON
 
 int main(int argc, char *argv[]) {
     std::cout << "--------------------------------------------------------\n";
@@ -369,26 +373,87 @@ int main(int argc, char *argv[]) {
     }
     std::vector<std::string> dependency_files = read_dependency_files(json_data);
 
+    bool partitions_defined = json_data.contains("MPI_island_partitions");
+    std::vector<int> mpi_partitions;
+    if (partitions_defined) {
+        std::vector<std::string> mpi_partitions_data = json_data["MPI_island_partitions"].get<std::vector<std::string>>();
+        mpi_partitions = calculate_mpi_partitions(mpi_partitions_data, num_mpi_ranks);
+    }
+    int this_partition = 0;
+    if (partitions_defined) {
+        this_partition = get_this_partition(mpi_partitions, rank);
+    }
+
+    // Logging for diagnostics
+    if (partitions_defined) {
+        std::stringstream partitions_info;
+        partitions_info << "Partitions: [";
+        for (size_t i = 0; i < mpi_partitions.size(); ++i) {
+            partitions_info << mpi_partitions[i];
+            if (i < mpi_partitions.size() - 1) {
+                partitions_info << ", ";
+            }
+        }
+        partitions_info << "]";
+        INFO_MSG << partitions_info.str() << std::endl;
+        INFO_MSG << "Assigned to partition: " << this_partition << std::endl;
+    } else {
+        INFO_MSG << "Partitioning not defined." << std::endl;
+    }
+
+    std::vector<std::string> optimize_parameters_str;
+    std::vector<int> optimize_parameters_int;
+    std::string optimize_parameters_set = "no";
+
+    std::string partition_key = "partition_" + std::to_string(this_partition);
+    nlohmann::json optimize_params_json;
+
+    // Try to get from partition-specific settings first
+    if (json_data.contains(partition_key) && json_data[partition_key].is_object() &&
+        json_data[partition_key].contains("optimize_parameters") && json_data[partition_key]["optimize_parameters"].is_array()) {
+        optimize_params_json = json_data[partition_key]["optimize_parameters"];
+    } else if (json_data.contains("optimize_parameters") && json_data["optimize_parameters"].is_array()) {
+        // Fallback to global settings
+        optimize_params_json = json_data["optimize_parameters"];
+    }
+    if (!optimize_params_json.empty()) {
+        INFO_MSG << "Parsing optimize_parameters" << std::endl;
+        for (const auto& item : optimize_params_json) {
+            if (item.is_string()) {
+                optimize_parameters_str.push_back(item.get<std::string>());
+                optimize_parameters_set = "str";
+            } else if (item.is_number_integer()) {
+                optimize_parameters_int.push_back(item.get<int>());
+                optimize_parameters_set = "int";
+            }
+        }
+        // Check to ensure homogeneous types within the array
+        if (!optimize_parameters_str.empty() && !optimize_parameters_int.empty()) {
+            ERROR_MSG << "Error: Mixed types in 'optimize_parameters'. Please use either all strings or all integers." << std::endl;
+            return EXIT_FAILURE; // or handle the error as appropriate
+        }
+    }
+
     // Read parameters from JSON file
-    unsigned int POP_SIZE = json_data.value("popSize", 200);
-    unsigned int MAX_GEN = json_data.value("maxGen", 50);
-    unsigned int MAX_TIME = json_data.value("maxTime", 100);  // New parameter
-    std::string RUN_LIMIT_TYPE = json_data.value("runLimitType", "maxGen");  // New parameter
-    unsigned int MIGRATION_PERIOD = json_data.value("migrationPeriod", 1);  // New parameter
-    unsigned int TOURNAMENT_SIZE = json_data.value("tournamentSize", 15);  // New parameter
-    unsigned int SELECTION_NUMBER = json_data.value("selectionNumber", 1);  // New parameter
-    double M_EPSILON = json_data.value("mutEpsilon", 0.01);
-    double P_CROSS = json_data.value("pCross", 0.25);
-    double P_MUT = json_data.value("pMut", 0.35);
-    double ETA_C = json_data.value("eta_c", 30.0);
-    double SIGMA = json_data.value("sigma", 0.1);
-    double P_CHANGE = json_data.value("p_change", 1.0);
-    std::string EVALUATOR = json_data.value("evaluator", "cosy");
-    std::string ALGORITHM = json_data.value("algorithm", "auto");
-    unsigned int TIMEOUT_MINUTES = json_data.value("timeout_minutes", 20);
-    unsigned int EVALUATION_MINIMAL_TIME = json_data.value("timein_seconds", 15);
-    std::string SOURCE_COMMAND = json_data.value("source_command", "");
-    bool PRINT_ALL_RESULTS = json_data.value("print_all_results", false);
+    auto POP_SIZE = get_json_value<unsigned int>(json_data, "popSize", this_partition, 200);
+    auto MAX_GEN = get_json_value<unsigned int>(json_data, "maxGen", this_partition, 50);
+    auto MAX_TIME = get_json_value<unsigned int>(json_data, "maxTime", this_partition, 100);
+    auto RUN_LIMIT_TYPE = get_json_value<std::string>(json_data, "runLimitType", this_partition, "maxGen");
+    auto MIGRATION_PERIOD = get_json_value<unsigned int>(json_data, "migrationPeriod", this_partition, 1);
+    auto TOURNAMENT_SIZE = get_json_value<unsigned int>(json_data, "tournamentSize", this_partition, 15);
+    auto SELECTION_NUMBER = get_json_value<unsigned int>(json_data, "selectionNumber", this_partition, 1);
+    auto M_EPSILON = get_json_value<double>(json_data, "mutEpsilon", this_partition, 0.01);
+    auto P_CROSS = get_json_value<double>(json_data, "pCross", this_partition, 0.25);
+    auto P_MUT = get_json_value<double>(json_data, "pMut", this_partition, 0.35);
+    auto ETA_C = get_json_value<double>(json_data, "eta_c", this_partition, 30.0);
+    auto SIGMA = get_json_value<double>(json_data, "sigma", this_partition, 0.01);
+    auto P_CHANGE = get_json_value<double>(json_data, "p_change", this_partition, 1.0);
+    auto EVALUATOR = get_json_value<std::string>(json_data, "evaluator", this_partition, "cosy");
+    auto ALGORITHM = get_json_value<std::string>(json_data, "algorithm", this_partition, "auto");
+    auto TIMEOUT_MINUTES = get_json_value<unsigned int>(json_data, "timeout_minutes", this_partition, 20);
+    auto EVALUATION_MINIMAL_TIME = get_json_value<unsigned int>(json_data, "timein_seconds", this_partition, 15);
+    auto SOURCE_COMMAND = get_json_value<std::string>(json_data, "source_command", this_partition, "");
+    auto PRINT_ALL_RESULTS = get_json_value<bool>(json_data, "print_all_results", this_partition, false);
 
     bool interactive_mode = json_data.value("interactive_mode", false);
     // modes: multistart, homogeneous
@@ -405,6 +470,7 @@ int main(int argc, char *argv[]) {
             ALGORITHM_STR = "hybrid1, rank " + to_string(rank) + " -> NSGAII";
         }
     }
+    INFO_MSG << "Algorithm set to: " << ALGORITHM_STR << std::endl;
 
     auto overrideConfig = [&loadedFromRedisJson](auto oldValue, const auto& newValue, const std::string& key) {
         if (loadedFromRedisJson && oldValue != newValue) {
@@ -753,6 +819,38 @@ int main(int argc, char *argv[]) {
         file.close();
     }
 
+    if (optimize_parameters_set == "int") {
+        INFO_MSG << "Converting int optimize_parameters" << std::endl;
+        // Convert indices to names
+        for (int index : optimize_parameters_int) {
+            if (index >= 0 && index < parameter_names.size()) {
+                optimize_parameters_str.push_back(parameter_names[index]);
+            } else {
+                std::cerr << "Index out of bounds error: " << index << std::endl;
+                return EXIT_FAILURE;  // or handle the error as appropriate
+            }
+        }
+        optimize_parameters_set = "yes";  // Update to reflect the current state of optimize_parameters
+    } else if (optimize_parameters_set == "str") {
+        INFO_MSG << "Converting str optimize_parameters" << std::endl;
+        // Convert names to indices
+        std::unordered_map<std::string, int> name_to_index_map;
+        for (size_t i = 0; i < parameter_names.size(); ++i) {
+            name_to_index_map[parameter_names[i]] = i;
+        }
+
+        for (const std::string& name : optimize_parameters_str) {
+            auto it = name_to_index_map.find(name);
+            if (it != name_to_index_map.end()) {
+                optimize_parameters_int.push_back(it->second);
+            } else {
+                std::cerr << "Name not found in parameter_names: " << name << std::endl;
+                return EXIT_FAILURE;  // or handle the error as appropriate
+            }
+        }
+        optimize_parameters_set = "yes";  // Update to reflect the current state of optimize_parameters
+    }
+
     for (size_t i = 0; i < parameter_names.size(); ++i) {
         std::stringstream message;
         message << "Parameter: " << parameter_names[i]
@@ -761,7 +859,27 @@ int main(int argc, char *argv[]) {
         if (use_default_values) {
             message << ", Default: " << default_values[i];
         }
-        INFO_MSG << message.str() << std::endl;
+        if (optimize_parameters_set != "no") {
+            // Check if the parameter is optimised by name or index
+            bool isOptimisedByName =
+                    std::find(optimize_parameters_str.begin(), optimize_parameters_str.end(), parameter_names[i]) !=
+                    optimize_parameters_str.end();
+            bool isOptimisedByIndex =
+                    std::find(optimize_parameters_int.begin(), optimize_parameters_int.end(), static_cast<int>(i)) !=
+                    optimize_parameters_int.end();
+            if (isOptimisedByName != isOptimisedByIndex) {
+                ERROR_MSG << "Error: Inconsistency detected in optimisation settings for parameter '"
+                          << parameter_names[i] << "'. Exiting." << std::endl;
+                return EXIT_FAILURE;
+            }
+            if (isOptimisedByName) {  // If one is true, both must be true
+                message << ", Optimised: Yes";
+            } else {
+                message << ", Optimised: No";
+            }
+        }
+        // Logging the message
+        INFO_MSG << message.str() << std::endl;  // Replace with INFO_MSG for your specific logging macro
     }
 
     default_values_vector.push_back(default_values);
@@ -833,15 +951,50 @@ int main(int argc, char *argv[]) {
     // crossover and mutation
     //eoQuadCloneOp<System<N_OBJECTIVES, N_TRAITS> > xover;
     eoRealVectorBounds bounds(min_values, max_values);
+    std::vector<double> SIGMAS(bounds.size(), 0.0);
+    // Check if optimize_parameters_set is not "no"
+    if (optimize_parameters_set == "yes") {
+        // Set SIGMA for parameters to be optimized
+        for (int index : optimize_parameters_int) {
+            if (index >= 0 && index < SIGMAS.size()) {
+                SIGMAS[index] = SIGMA;
+            }
+        }
+    } else {
+        // If no optimization settings are defined, use SIGMA for all parameters
+        std::fill(SIGMAS.begin(), SIGMAS.end(), SIGMA);
+    }
+    // Debug print of the SIGMAS vector
+    std::cout << "SIGMAS vector: [";
+    for (size_t i = 0; i < SIGMAS.size(); i++) {
+        std::cout << SIGMAS[i];
+        if (i < SIGMAS.size() - 1) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << "]" << std::endl;
+    // Adjust bounds for init and init2 if the flag is set
+    std::vector<double> min_values_init = min_values;
+    std::vector<double> max_values_init = max_values;
+    bool adjust_bounds_for_non_optimized = true;
+    if (adjust_bounds_for_non_optimized && optimize_parameters_set == "yes") {
+        for (size_t i = 0; i < min_values.size(); ++i) {
+            if (std::find(optimize_parameters_int.begin(), optimize_parameters_int.end(), i) == optimize_parameters_int.end()) {
+                min_values_init[i] = default_values[i];
+                max_values_init[i] = default_values[i];
+            }
+        }
+    }
+    eoRealVectorBounds bounds_init(min_values_init, max_values_init);
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
     eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(bounds, ETA_C);
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
-    eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
-    eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
-    eoRealInitBounded<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> init2(bounds);
+    eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
+    eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds_init);
+    eoRealInitBounded<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> init2(bounds_init);
     SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop;
 
     if (mode == "multistart") {
@@ -851,8 +1004,8 @@ int main(int argc, char *argv[]) {
 
         eoRealVectorBounds bounds(min_values, max_values);
         eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
-        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
-        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds_init);
         eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
         pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
         moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
@@ -924,7 +1077,29 @@ int main(int argc, char *argv[]) {
 
         // LS
         std::vector<unsigned int> minScalingExplored = {1, 2, 3};
-        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, 1e-3,
+        std::vector<double> epsilons(bounds.size(), 0.0);
+        // Check if optimize_parameters_set is not "no"
+        if (optimize_parameters_set == "yes") {
+            // Set epsilon for parameters to be optimized
+            for (int index : optimize_parameters_int) {
+                if (index >= 0 && index < epsilons.size()) {
+                    epsilons[index] = 1e-3;
+                }
+            }
+        } else {
+            // If no optimization settings are defined, use epsilon for all parameters
+            std::fill(epsilons.begin(), epsilons.end(), 1e-3);
+        }
+        // Debug print of the epsilons vector
+        std::cout << "epsilons vector: [";
+        for (size_t i = 0; i < epsilons.size(); i++) {
+            std::cout << epsilons[i];
+            if (i < epsilons.size() - 1) {
+                std::cout << ", ";
+            }
+        }
+        std::cout << "]" << std::endl;
+        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, epsilons,
                                                                                                                      30, false,
                                                                                                                      minScalingExplored,3, 5);
         eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
@@ -1160,8 +1335,8 @@ int main(int argc, char *argv[]) {
 
         eoRealVectorBounds bounds(min_values, max_values);
         eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
-        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMA, P_CHANGE);
-        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds_init);
         eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
         pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
         moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
