@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-cmake_policy(SET CMP0144 NEW)
+#cmake_policy(SET CMP0144 NEW)
 project(glyfada VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -102,9 +102,9 @@ set(SOURCE_FILES
 add_executable(optimiser ${SOURCE_FILES})
 
 target_include_directories(optimiser PRIVATE
-		/usr/include
-    	/usr/include/c++/11
-    	/usr/include/x86_64-linux-gnu/c++/11
+#		/usr/include
+#    	/usr/include/c++/11
+#    	/usr/include/x86_64-linux-gnu/c++/11
 		${CMAKE_CURRENT_SOURCE_DIR}
 		${PARADISEO_ROOT}/eo/src/
 		${PARADISEO_ROOT}/smp/src/topology

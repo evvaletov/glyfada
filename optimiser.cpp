@@ -816,6 +816,11 @@ int main(int argc, char *argv[]) {
         file.close();
     }
 
+    if (!validateOptimizeParameters(json_data, parameter_names)) {
+        ERROR_MSG << "Invalid optimize_parameters configuration detected. Exiting." << std::endl;
+        return EXIT_FAILURE;
+    }
+
     if (optimize_parameters_set == "int") {
         INFO_MSG << "Converting int optimize_parameters" << std::endl;
         // Convert indices to names

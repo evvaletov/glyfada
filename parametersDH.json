@@ -5,13 +5,13 @@
   "partition_0": {
     "algorithm": "ULS",
     "optimize_parameters": [
-      0,1,2,3
+      "B50","B51","B52","B53"
     ]
   },
   "partition_1": {
     "algorithm": "NSGAII",
     "optimize_parameters": [
-      4,5,6,7
+      5,6,7,4
     ]
   },
   "evaluator": "dh",
@@ -40,8 +40,8 @@
   "selectionNumber": 1,
   "interactive_mode": false,
   "excludeList": [
-    [5000.0, 0.0, 0.0],
-    [0.0, 0.0, 5000.0]
+    [-5000.0, 0.0, 0.0],
+    [0.0, 0.0, -5000.0]
   ],
   "parameters": [
     {
