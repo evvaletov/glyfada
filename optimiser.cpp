@@ -690,124 +690,100 @@ int main(int argc, char *argv[]) {
                 if (args.size() >= 2) {
                     size_t openBracket = args[0].find('[');
                     size_t closeBracket = args[0].find(']');
-                    //INFO_MSG << "openBracket = " << openBracket << std::endl;
-                    //INFO_MSG << "closeBracket = " << closeBracket << std::endl;
+                    size_t openParen = args[0].find('(');
+                    size_t closeParen = args[0].find(')');
+
                     if (openBracket != std::string::npos && openBracket < closeBracket) {
-                        // Confirmed args[0] is likely a categorical parameter specification
-                        // Now, determine if it's a single-category categorical parameter
-                        size_t commaIndex = args[0].find(',', openBracket);
-                        bool hasComma = commaIndex != std::string::npos && commaIndex < closeBracket;
-                        //INFO_MSG << "args[0] = " << args[0] << std::endl;
-                        //if (args.size()>=2) INFO_MSG << "args[1] = " << args[1] << std::endl;
-                        //if (args.size()>=3) INFO_MSG << "args[2] = " << args[2] << std::endl;
-                        //INFO_MSG << "hasComma = " << hasComma << std::endl;
+                        // This is a categorical parameter
+                        std::string categories = args[0].substr(openBracket + 1, closeBracket - openBracket - 1);
+                        std::vector<std::string> categoryList = splitString(categories, ',');
 
                         // Extract parameter name
                         std::string name = args[1].substr(args[1].find_first_of("\"\'") + 1,
                                                           args[1].find_last_of("\"\'") - args[1].find_first_of("\"\'") - 1);
 
-                        if (hasComma) {
-                            // Check for the presence of a default_value in the arguments
+                        if (categoryList.size() == 1) {
+                            // Single category parameter
                             std::string defaultValue;
                             bool foundDefaultValue = false;
                             for (const auto& arg : args) {
-                                size_t equalsIndex = arg.find("default_value=");
-                                if (equalsIndex != std::string::npos) {
-                                    defaultValue = arg.substr(equalsIndex + strlen("default_value="));
+                                if (arg.find("default_value=") != std::string::npos) {
+                                    defaultValue = parseDefaultValue(arg);
                                     foundDefaultValue = true;
                                     break;
                                 }
                             }
 
-                            if (!foundDefaultValue) {
-                                ERROR_MSG << "Error: Categorical parameter with multiple categories and no default value provided." << std::endl;
-                                exit(EXIT_FAILURE);
-                            } else {
-                                // Treat this as a single-category categorical parameter, using the default value as the category
+                            if (foundDefaultValue) {
+                                // Use the default value as is, preserving quotes if present
                                 single_category_parameters += name + "=" + defaultValue + " ";
+                            } else {
+                                // Use the single category value
+                                std::string category = trim(categoryList[0]);
+                                if (category.front() == '"' || category.front() == '\'') {
+                                    category = category.substr(1, category.length() - 2);
+                                }
+                                single_category_parameters += name + "=" + category + " ";
+                            }
+
+                            // Check for a mismatch between the default value and the category
+                            if (foundDefaultValue && trim(defaultValue) != trim(categoryList[0])) {
+                                WARN_MSG << "Warning: Default value '" << defaultValue
+                                         << "' does not match the sole category '" << categoryList[0]
+                                         << "' for parameter '" << name << "'." << std::endl;
                             }
                         } else {
-                            // It's a single-category parameter without a comma, process normally
-                            std::string category = args[0].substr(openBracket + 1, closeBracket - openBracket - 1);
-                            single_category_parameters += name + "=" + category + " ";
+                            // Multiple categories, look for default value
+                            std::string defaultValue;
+                            bool foundDefaultValue = false;
+                            for (const auto& arg : args) {
+                                if (arg.find("default_value=") != std::string::npos) {
+                                    defaultValue = parseDefaultValue(arg);
+                                    foundDefaultValue = true;
+                                    break;
+                                }
+                            }
+                            if (foundDefaultValue) {
+                                // Use the default value as is, preserving quotes if present
+                                single_category_parameters += name + "=" + defaultValue + " ";
+                            } else {
+                                WARN_MSG << "Warning: Categorical parameter '" << name << "' with multiple categories has no default value." << std::endl;
+                            }
                         }
-                    }  else {
-                        if (args.size() < 2 || args.size() > 3) continue; // Ensure correct number of arguments
+                    } else if (openParen != std::string::npos && openParen < closeParen) {
+                        // This is a continuous parameter
+                        std::string range = args[0].substr(openParen + 1, closeParen - openParen - 1);
+                        std::vector<std::string> rangeParts = splitString(range, ',');
 
-                        std::string range = args[0];
-                        //std::cout << "Range string: " << range << std::endl; // Debug print
-
-                        //INFO_MSG << "args[0] = " << args[0] << std::endl;
-                        //if (args.size()>=2) INFO_MSG << "args[1] = " << args[1] << std::endl;
-                        //if (args.size()>=3) INFO_MSG << "args[2] = " << args[2] << std::endl;
-
-                        size_t openParen = range.find("(");
-                        size_t closeParen = range.find(")");
-                        if (openParen == std::string::npos || closeParen == std::string::npos) continue;
-                        // Ensure parentheses are found
-
-                        std::string minMax = range.substr(openParen + 1, closeParen - openParen - 1);
-                        std::istringstream rangeStream(minMax);
-                        std::string min_str_raw, max_str_raw;
-                        std::getline(rangeStream, min_str_raw, ',');
-                        std::getline(rangeStream, max_str_raw);
-
-                        std::string min_str = trim(min_str_raw);
-                        std::string max_str = trim(max_str_raw);
-
-                        //std::cout << "Trimmed Min string: " << min_str << ", Trimmed Max string: " << max_str << std::endl; // Debug print
-
-                        if (!isNumber(min_str)) {
-                            ERROR_MSG << "Non-numeric lower bound encountered: " << min_str << std::endl;
-                            return EXIT_FAILURE;
+                        if (rangeParts.size() != 2) {
+                            ERROR_MSG << "Error: Invalid range format for continuous parameter." << std::endl;
+                            exit(EXIT_FAILURE);
                         }
-                        if (!isNumber(max_str)) {
-                            ERROR_MSG << "Non-numeric upper bound encountered: " << max_str << std::endl;
-                            return EXIT_FAILURE;
-                        }
-                        double min_val = std::stod(min_str);
-                        double max_val = std::stod(max_str);
-                        //std::cout << "Parsed Min: " << min_val << ", Max: " << max_val << std::endl; // Debug print
 
+                        double min_val = std::stod(trim(rangeParts[0]));
+                        double max_val = std::stod(trim(rangeParts[1]));
 
+                        // Extract parameter name
+                        std::string name = args[1].substr(args[1].find_first_of("\"\'") + 1,
+                                                          args[1].find_last_of("\"\'") - args[1].find_first_of("\"\'") - 1);
+
+                        parameter_names.push_back(name);
                         min_values.push_back(min_val);
                         max_values.push_back(max_val);
 
-                        std::string name = args[1];
-                        //std::cout << "Name argument: " << name << std::endl; // Debug print
-
-                        size_t nameStart = name.find_first_of("\"\'");
-                        size_t nameEnd = name.find_last_of("\"\'");
-                        if (nameStart == std::string::npos || nameEnd == std::string::npos || nameStart == nameEnd)
-                            continue;
-
-                        parameter_names.push_back(name.substr(nameStart + 1, nameEnd - nameStart - 1));
-                        //std::cout << "Parsed Parameter Name: " << parameter_names.back() << std::endl; // Debug print
-
-                        // Extracting the default value (if use_default_values is true)
-                        if (use_default_values && args.size() == 3) {
-                            std::string defaultValueStr = args[2];
-                            size_t defaultStart = defaultValueStr.find("default_value=");
-                            if (defaultStart != std::string::npos) {
-                                defaultValueStr = defaultValueStr.substr(defaultStart + strlen("default_value="));
-                                defaultValueStr = trim(defaultValueStr);
-                                // TODO: the following is a workaround for parseArguments leaving a final ")". Fix this.
-                                // Remove a single trailing parenthesis if present
-                                if (!defaultValueStr.empty() && defaultValueStr.back() == ')') {
-                                    defaultValueStr.pop_back();
-                                }
-                                if (!isNumber(defaultValueStr)) {
-                                    ERROR_MSG << "Non-numeric default value encountered: " << defaultValueStr << std::endl;
-                                    return EXIT_FAILURE;
-                                }
+                        // Look for default value
+                        for (const auto& arg : args) {
+                            size_t equalsIndex = arg.find("default_value=");
+                            if (equalsIndex != std::string::npos) {
+                                std::string defaultValueStr = arg.substr(equalsIndex + strlen("default_value="));
                                 double defaultValue = std::stod(defaultValueStr);
                                 default_values.push_back(defaultValue);
-                            } else {
-                                // Handle the case where no default value is specified
-                                ERROR_MSG << "No default value specified for parameter: " << parameter_names.back() << std::endl;
-                                return EXIT_FAILURE;
+                                break;
                             }
                         }
+                    } else {
+                        ERROR_MSG << "Error: Invalid parameter format." << std::endl;
+                        exit(EXIT_FAILURE);
                     }
                 }
             }

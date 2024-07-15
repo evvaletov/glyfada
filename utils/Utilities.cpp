@@ -73,12 +73,40 @@ bool isNumber(const std::string& str) {
     return iss.eof() && !iss.fail();
 }
 
-std::string trim(const std::string &str) {
-    size_t first = str.find_first_not_of(' ');
-    if (first == std::string::npos)
+// Function to split a string by a delimiter
+std::vector<std::string> splitString(const std::string& s, char delimiter) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::istringstream tokenStream(s);
+    while (std::getline(tokenStream, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+std::string parseDefaultValue(const std::string& arg) {
+    size_t equalsIndex = arg.find("default_value=");
+    if (equalsIndex == std::string::npos) {
         return "";
-    size_t last = str.find_last_not_of(' ');
-    return str.substr(first, (last - first + 1));
+    }
+
+    std::string defaultValue = arg.substr(equalsIndex + strlen("default_value="));
+
+    // Remove leading and trailing whitespace
+    defaultValue = trim(defaultValue);
+
+    // Remove trailing closing parenthesis if present
+    if (defaultValue.back() == ')') {
+        defaultValue.pop_back();
+    }
+
+    return defaultValue;
+}
+
+std::string trim(const std::string& str) {
+    size_t first = str.find_first_not_of(" \t\n\r\f\v");
+    size_t last = str.find_last_not_of(" \t\n\r\f\v");
+    return (first == std::string::npos) ? "" : str.substr(first, (last - first + 1));
 }
 
 bool starts_with(const std::string& str, const std::string& prefix) {
@@ -95,68 +123,67 @@ bool ends_with(const std::string& str, const std::string& suffix) {
     return str.substr(str.length() - suffix.length(), suffix.length()) == suffix;
 }
 
+
 std::vector<std::string> parseArguments(const std::string &s) {
-    std::vector<std::string> arguments;
-    bool inParentheses = false;
-    bool inBrackets = false; // Added to track square brackets
-    std::string currentArg;
+        std::vector<std::string> arguments;
+        bool inParentheses = false;
+        bool inBrackets = false;
+        bool inQuotes = false;
+        char quoteChar = '\0';
+        std::string currentArg;
 
-    for (char c: s) {
-        if (c == '(') {
-            inParentheses = true;
-            currentArg += c;
-        } else if (c == ')') {
-            inParentheses = false;
-            currentArg += c;
-        } else if (c == '[') {
-            inBrackets = true;
-            currentArg += c;
-        } else if (c == ']') {
-            inBrackets = false;
-            currentArg += c;
-        } else if (c == ',' && !inParentheses && !inBrackets) {
-            arguments.push_back(currentArg);
-            currentArg.clear();
-        } else {
-            currentArg += c;
-        }
-    }
-
-    if (!currentArg.empty()) {
-        arguments.push_back(currentArg);
-    }
-
-    // Adjust to check both types of brackets
-    for (std::string& arg : arguments) {
-        int openParenthesesCount = 0;
-        int closeParenthesesCount = 0;
-        int openBracketsCount = 0;
-        int closeBracketsCount = 0;
-
-        for (char c : arg) {
-            if (c == '(') openParenthesesCount++;
-            else if (c == ')') closeParenthesesCount++;
-            else if (c == '[') openBracketsCount++;
-            else if (c == ']') closeBracketsCount++;
-        }
-
-        // Check for unbalanced brackets/parentheses and remove the last unbalanced one
-        if (closeParenthesesCount > openParenthesesCount && arg.back() == ')') {
-            arg.pop_back();
-            closeParenthesesCount--;
+        for (char c : s) {
+            if (!inQuotes) {
+                if (c == '(') {
+                    inParentheses = true;
+                } else if (c == ')') {
+                    inParentheses = false;
+                } else if (c == '[') {
+                    inBrackets = true;
+                } else if (c == ']') {
+                    inBrackets = false;
+                } else if ((c == '"' || c == '\'') && !inParentheses && !inBrackets) {
+                    inQuotes = true;
+                    quoteChar = c;
+                } else if (c == ',' && !inParentheses && !inBrackets) {
+                    arguments.push_back(trim(currentArg));
+                    currentArg.clear();
+                    continue;
+                }
+            } else if (c == quoteChar) {
+                inQuotes = false;
             }
-        if (closeBracketsCount > openBracketsCount && arg.back() == ']') {
-            arg.pop_back();
-            closeBracketsCount--;
-        }
-        if ((starts_with(arg, "((") && ends_with(arg, "))")) || (starts_with(arg, "([") && ends_with(arg, "])"))
-            && (closeParenthesesCount == openParenthesesCount) && (closeBracketsCount == openBracketsCount)) {
-            arg = arg.substr(1, arg.size() - 2);
-        }
-    }
 
-    return arguments;
-}
+            currentArg += c;
+        }
+
+        if (!currentArg.empty()) {
+            arguments.push_back(trim(currentArg));
+        }
+
+        // Clean up arguments
+        for (std::string& arg : arguments) {
+            // Remove unbalanced closing parentheses or brackets at the end
+            while (!arg.empty() && (arg.back() == ')' || arg.back() == ']')) {
+                char closing = arg.back();
+                char opening = (closing == ')') ? '(' : '[';
+                if (std::count(arg.begin(), arg.end(), opening) < std::count(arg.begin(), arg.end(), closing)) {
+                    arg.pop_back();
+                } else {
+                    break;
+                }
+            }
+
+            // Remove surrounding double parentheses or mixed parentheses/brackets
+            if ((arg.size() >= 4) &&
+                ((arg[0] == '(' && arg[1] == '(' && arg[arg.size()-2] == ')' && arg[arg.size()-1] == ')') ||
+                 (arg[0] == '(' && arg[1] == '[' && arg[arg.size()-2] == ']' && arg[arg.size()-1] == ')'))) {
+                arg = arg.substr(1, arg.size() - 2);
+            }
+        }
+
+        return arguments;
+    }
 
 
 std::string currentDateTime() {

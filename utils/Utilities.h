@@ -23,6 +23,10 @@ std::vector<std::string> read_dependency_files(const nlohmann::json &json);
 
 bool isNumber(const std::string &str);
 
+std::vector<std::string> splitString(const std::string& s, char delimiter);
+
+std::string parseDefaultValue(const std::string& arg);
+
 std::string trim(const std::string &str);
 
 std::vector<std::string> parseArguments(const std::string &s);
