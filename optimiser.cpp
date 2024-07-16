@@ -782,8 +782,8 @@ int main(int argc, char *argv[]) {
                             }
                         }
                     } else {
-                        ERROR_MSG << "Error: Invalid parameter format." << std::endl;
-                        exit(EXIT_FAILURE);
+                        WARN_MSG << "Error: Invalid parameter format" << trim(line) << std::endl;
+                        //exit(EXIT_FAILURE);
                     }
                 }
             }
