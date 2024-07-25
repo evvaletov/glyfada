@@ -67,7 +67,7 @@ typedef std::vector<double> (*EvalFunction)(
     int);
 
 // the moeoObjectiveVectorTraits
-template<int N_OBJECTIVES>
+/*template<int N_OBJECTIVES>
 class GlyfadaMoeoObjectiveVectorTraits : public moeoObjectiveVectorTraits {
 public:
     static bool minimizing(int i) {
@@ -81,17 +81,16 @@ public:
     static unsigned int nObjectives() {
         return N_OBJECTIVES;
     }
-};
+};*/
 
 // objective vector of real values
-template<int N_OBJECTIVES>
-using GlyfadaMoeoObjectiveVector = moeoRealObjectiveVector<GlyfadaMoeoObjectiveVectorTraits<N_OBJECTIVES> >;
+using GlyfadaMoeoObjectiveVector = moeoRealObjectiveVector<moeoObjectiveVectorTraits>;
 
 // multi-objective evolving object for the System problem
-template<int N_OBJECTIVES, int N_TRAITS>
-class GlyfadaMoeoRealVector final : public moeoRealVector<GlyfadaMoeoObjectiveVector<N_OBJECTIVES> > {
+template<int N_TRAITS>
+class GlyfadaMoeoRealVector final : public moeoRealVector<GlyfadaMoeoObjectiveVector > {
 public:
-    GlyfadaMoeoRealVector() : moeoRealVector<GlyfadaMoeoObjectiveVector<N_OBJECTIVES> >(N_TRAITS) {
+    GlyfadaMoeoRealVector() : moeoRealVector<GlyfadaMoeoObjectiveVector>(N_TRAITS) {
     }
 
     // Overload the equality operator with tolerance
@@ -112,12 +111,13 @@ public:
 };
 
 // Global vectors to store all evaluated solutions and their corresponding generations
-std::vector<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > allEvaluatedSolutions;
+// TODO: re-enable all solutions
+std::vector<GlyfadaMoeoRealVector<N_TRAITS> > allEvaluatedSolutions;
 std::mutex mutexAllEvaluated; // A mutex for controlling access to the above vectors
 
 // evaluation of objective functions
-template<int N_OBJECTIVES, int N_TRAITS>
-class SystemEval final : public moeoEvalFunc<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > {
+template<int N_TRAITS>
+class SystemEval final : public moeoEvalFunc<GlyfadaMoeoRealVector<N_TRAITS> > {
 public:
     SystemEval(EvalFunction evaluator, const std::string &source_command,
                const std::vector<std::string> &parameter_names,
@@ -133,9 +133,9 @@ public:
           evaluation_minimal_time(evaluation_minimal_time), total_evaluation_time(0), evaluation_count(0) {
     }
 
-    void operator()(GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> &_vec) override {
+    void operator()(GlyfadaMoeoRealVector<N_TRAITS> &_vec) override {
         if (_vec.invalidObjectiveVector()) {
-            GlyfadaMoeoObjectiveVector<N_OBJECTIVES> objVec;
+            GlyfadaMoeoObjectiveVector objVec;
             vector<double> parameter_values(N_TRAITS); // use dimension() here instead of size()
             for (size_t i = 0; i < N_TRAITS; ++i) // use dimension() here instead of size()
             {
@@ -869,6 +869,9 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    std::vector<bool> minimize(N_OBJECTIVES, false);  // false for maximization
+    moeoObjectiveVectorTraits::setup(N_OBJECTIVES, minimize);
+
     EvalFunction evalFunc;
     std::unordered_map<std::string, EvalFunction> evaluatorMap = {
         {"cosy", run_cosy},
@@ -967,26 +970,26 @@ int main(int argc, char *argv[]) {
     // eoUniformMutation<System<N_OBJECTIVES, N_TRAITS> > mutation(bounds, M_EPSILON);
     //double eta_c = 30.0; // A parameter for SBX, typically chosen between 10 and 30
     //double eta_m = 20.0; // A parameter for Polynomial Mutation, typically chosen between 10 and 100
-    eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(bounds, ETA_C);
+    eoSBXCrossover<GlyfadaMoeoRealVector<N_TRAITS> > xover(bounds, ETA_C);
     //double sigma = 0.1; // You can set the standard deviation here.
     //double p_change = 1.0; // Probability to change a given coordinate, default is 1.0
-    eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
-    eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds_init);
-    eoRealInitBounded<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> init2(bounds_init);
-    SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop;
+    eoNormalVecMutation<GlyfadaMoeoRealVector<N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
+    eoRealInitBounded<GlyfadaMoeoRealVector<N_TRAITS> > init(bounds_init);
+    eoRealInitBounded<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_TRAITS>>> init2(bounds_init);
+    SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS>>> pop;
 
     if (mode == "multistart") {
         // objective functions evaluation
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
+        SystemEval<N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                 program_directory, program_file, config_file, dependency_files);
 
         eoRealVectorBounds bounds(min_values, max_values);
-        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
-        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
-        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds_init);
-        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
-        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
-        moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
+        eoSBXCrossover<GlyfadaMoeoRealVector<N_TRAITS> > xover(ETA_C);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_TRAITS> > init(bounds_init);
+        eoPop<GlyfadaMoeoRealVector<N_TRAITS> > pop0(POP_SIZE, init);
+        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS> > > (pop0);
+        moeoNSGAII<GlyfadaMoeoRealVector<N_TRAITS> > nsgaII(
             MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
         nsgaII(pop);
@@ -996,7 +999,7 @@ int main(int argc, char *argv[]) {
 //TODO: test this
                 std::stringstream msgStream;
                 INFO_MSG << "Initialising from redis job ID: " << redisInitJobID << std::endl;
-                auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+                auto manager0 = RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
                 if(use_default_values) manager0->setParameters(parameter_names, default_values); else manager0->setParameters(parameter_names);
 
                 // Retrieve the entire population from Redis
@@ -1044,13 +1047,13 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager =
-                    RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
+            RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>* manager =
+                    RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
                                                                                              redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
             if(use_default_values) manager->setParameters(parameter_names, default_values); else manager->setParameters(parameter_names);
         }
 
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
+        SystemEval<N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                  program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
         // LS
@@ -1077,25 +1080,25 @@ int main(int argc, char *argv[]) {
             }
         }
         std::cout << "]" << std::endl;
-        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> explorer(eval1, bounds, epsilons,
+        RealVectorNeighborhoodExplorer<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_TRAITS>>> explorer(eval1, bounds, epsilons,
                                                                                                                      30, false,
                                                                                                                      minScalingExplored,3, 5);
-        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuator(MAX_GEN);
-        moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> archLS;
-        std::vector<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector> excludeListObjectiveVector;
+        eoGenContinue<GlyfadaMoeoRealVector<N_TRAITS> > continuator(MAX_GEN);
+        moeoUnboundedArchive<GlyfadaMoeoRealVector<N_TRAITS>> archLS;
+        std::vector<GlyfadaMoeoRealVector<N_TRAITS>::ObjectiveVector> excludeListObjectiveVector;
         for (auto& vec : excludeList) {
-            GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>::ObjectiveVector objVec(vec);
+            GlyfadaMoeoRealVector<N_TRAITS>::ObjectiveVector objVec(vec);
             excludeListObjectiveVector.push_back(objVec);
         }
         // Create an instance of moeoBestUnvisitedSelect with the new ObjectiveVector exclusion list
-        moeoBestUnvisitedSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2, excludeListObjectiveVector);
+        moeoBestUnvisitedSelect<GlyfadaMoeoRealVector<N_TRAITS>> select(2, excludeListObjectiveVector);
         //moeoBestUnvisitedSelect <GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> select(2);
         //moeoUnifiedDominanceBasedLSReal<moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> LSalgo(continuator, eval1, archLS, explorer, select);
         // NSGAII
         // Define a pointer to the base continuator type
-        eoContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* continuatorPtr = nullptr;
-        eoGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > continuatorGen(MAX_GEN);
-        eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> continuatorTime(MAX_TIME*60);
+        eoContinue<GlyfadaMoeoRealVector<N_TRAITS>>* continuatorPtr = nullptr;
+        eoGenContinue<GlyfadaMoeoRealVector<N_TRAITS> > continuatorGen(MAX_GEN);
+        eoSecondsElapsedTrackGenContinue<GlyfadaMoeoRealVector<N_TRAITS>> continuatorTime(MAX_TIME*60);
         // Decide which continuator to use based on RUN_LIMIT_TYPE
         if (RUN_LIMIT_TYPE == "maxGen") {
             continuatorPtr = &continuatorGen;
@@ -1104,26 +1107,26 @@ int main(int argc, char *argv[]) {
             continuatorPtr = &continuatorTime;
             INFO_MSG << "Worker " << rank << " (maxTime): continuator: " << *continuatorPtr << std::endl;
         }
-        eoSGATransform<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
+        eoSGATransform<GlyfadaMoeoRealVector<N_TRAITS> > transform(xover, P_CROSS, mutation, P_MUT);
         Topology<Complete> topo;
 
         if (mode == "MPI") {
-            MPI_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo);
+            MPI_IslandModel<GlyfadaMoeoRealVector<N_TRAITS> > model(topo);
         } else if (mode == "redis") {
-            Redis_IslandModel<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > model(topo, 0);
+            Redis_IslandModel<GlyfadaMoeoRealVector<N_TRAITS> > model(topo, 0);
         }
 
-        std::vector<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>> pops;
+        std::vector<eoPop<GlyfadaMoeoRealVector<N_TRAITS>>> pops;
         //SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > pop2(pop20);
         // // Emigration policy
         // // // Element 1
-        eoPeriodicContinue<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > criteria_1(MIGRATION_PERIOD);
-        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > selectOne_1(TOURNAMENT_SIZE);
-        eoSelectNumber<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > who_1(selectOne_1, SELECTION_NUMBER);
-        MigPolicy<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > migPolicy_1;
-        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> >(who_1, criteria_1));
+        eoPeriodicContinue<GlyfadaMoeoRealVector<N_TRAITS> > criteria_1(MIGRATION_PERIOD);
+        eoDetTournamentSelect<GlyfadaMoeoRealVector<N_TRAITS> > selectOne_1(TOURNAMENT_SIZE);
+        eoSelectNumber<GlyfadaMoeoRealVector<N_TRAITS> > who_1(selectOne_1, SELECTION_NUMBER);
+        MigPolicy<GlyfadaMoeoRealVector<N_TRAITS> > migPolicy_1;
+        migPolicy_1.push_back(PolicyElement<GlyfadaMoeoRealVector<N_TRAITS> >(who_1, criteria_1));
         // // Integration policy
-        eoPlusReplacement<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > intPolicy_1;
+        eoPlusReplacement<GlyfadaMoeoRealVector<N_TRAITS> > intPolicy_1;
         // TODO: read https://pixorblog.wordpress.com/2019/08/14/curiously-recurring-template-pattern-crtp-in-depth/
         // TODO: learn about C++ templates
 
@@ -1133,7 +1136,7 @@ int main(int argc, char *argv[]) {
                 // Now use continuatorPtr which points to the selected continuator
                 if (mode == "MPI") {
                     if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
-                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, MPI_IslandModel>(
+                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_TRAITS>, MPI_IslandModel>(
                                 num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
                                 intPolicy_1,  // Integration policy
                                 migPolicy_1,  // Migration policy
@@ -1142,8 +1145,8 @@ int main(int argc, char *argv[]) {
                                 eval1,  // Evaluation function
                                 transform);
                     } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
-                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
-                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>, MPI_IslandModel>(
+                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_TRAITS>,
+                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_TRAITS>>, MPI_IslandModel>(
                                 num_mpi_ranks, topo, POP_SIZE, default_values_vector, init,
                                 intPolicy_1,  // Integration policy
                                 migPolicy_1,  // Migration policy
@@ -1160,7 +1163,7 @@ int main(int argc, char *argv[]) {
                     }
                 } else if (mode == "redis") {
                     if (ALGORITHM == "NSGAII" or ALGORITHM == "auto") {
-                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>, Redis_IslandModel>(
+                        pops = IslandModelWrapper<moeoNSGAII, GlyfadaMoeoRealVector<N_TRAITS>, Redis_IslandModel>(
                                 1, topo, POP_SIZE, default_values_vector, init,
                                 intPolicy_1,  // Integration policy
                                 migPolicy_1,  // Migration policy
@@ -1169,8 +1172,8 @@ int main(int argc, char *argv[]) {
                                 eval1,  // Evaluation function
                                 transform);
                     } else if (ALGORITHM == "ULS" or ALGORITHM == "UnifiedDominanceBasedLS_Real") {
-                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>,
-                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>, Redis_IslandModel>(
+                        pops = IslandModelWrapper<moeoUnifiedDominanceBasedLSReal, GlyfadaMoeoRealVector<N_TRAITS>,
+                                moRealVectorNeighbor<GlyfadaMoeoRealVector<N_TRAITS>>, Redis_IslandModel>(
                                 1, topo, POP_SIZE, default_values_vector, init,
                                 intPolicy_1,  // Integration policy
                                 migPolicy_1,  // Migration policy
@@ -1198,24 +1201,24 @@ int main(int argc, char *argv[]) {
         }
 
         if (mode == "MPI") {
-            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pops[rank]);
+            moeoUnboundedArchive<GlyfadaMoeoRealVector<N_TRAITS> > arch1;
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS> > > (pops[rank]);
             cout << "Arhive update on MPI rank " << rank << ": " << arch1(pops[rank]) << endl;
             arch1.sortedPrintOn(cout);
 
         } else if (mode == "redis") {
-            RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager =
-                    RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
+            RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>* manager =
+                    RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword,
                                                                                              redisJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
             if (manager->getIsMainInstance() or redisWriteAll) {
                 auto retrievedPop = manager->retrieveEntirePopulation();
                 //if (!redisWriteAll) manager->clearPopulation();
                 std::cout << "Retrieved pop: " << retrievedPop.size() << std::endl;
-                eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>> &mainPop = pops[0];
+                eoPop<GlyfadaMoeoRealVector<N_TRAITS>> &mainPop = pops[0];
                 cout << "Main pop: " << mainPop.size() << endl;
                 mainPop.append(retrievedPop);
-                pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > >(mainPop);
-                moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch1;
+                pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS> > >(mainPop);
+                moeoUnboundedArchive<GlyfadaMoeoRealVector<N_TRAITS> > arch1;
                 //cout << "Pop size before archiving: " << pops[0].size() << endl;
                 cout << "Archive update: " << arch1(pop) << endl;
 
@@ -1230,7 +1233,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Model run complete on mpi rank " << rank << std::endl;
 
     } else if (mode == "redistest") {
-        RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test10", (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
+        RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>* manager = RedisManager<GlyfadaMoeoRealVector<N_TRAITS>>::getInstance(redisIP, redisPort, redisPassword, "test10", (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
 
         // Test key and value
         std::string testKey = "testKey";
@@ -1308,23 +1311,23 @@ int main(int argc, char *argv[]) {
         manager->clearPopulation();
 
         // objective functions evaluation
-        SystemEval<N_OBJECTIVES, N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
+        SystemEval<N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
                                                 program_directory, program_file, config_file, dependency_files);
 
         eoRealVectorBounds bounds(min_values, max_values);
-        eoSBXCrossover<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > xover(ETA_C);
-        eoNormalVecMutation<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
-        eoRealInitBounded<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > init(bounds_init);
-        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > pop0(POP_SIZE, init);
-        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (pop0);
-        moeoNSGAII<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > nsgaII(
+        eoSBXCrossover<GlyfadaMoeoRealVector<N_TRAITS> > xover(ETA_C);
+        eoNormalVecMutation<GlyfadaMoeoRealVector<N_TRAITS> > mutation(bounds, SIGMAS, P_CHANGE);
+        eoRealInitBounded<GlyfadaMoeoRealVector<N_TRAITS> > init(bounds_init);
+        eoPop<GlyfadaMoeoRealVector<N_TRAITS> > pop0(POP_SIZE, init);
+        pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS> > > (pop0);
+        moeoNSGAII<GlyfadaMoeoRealVector<N_TRAITS> > nsgaII(
             MAX_GEN, eval, xover, P_CROSS, mutation, P_MUT);
 
         nsgaII(pop);
 
         // First call to updatePopulation
         std::cout << "Sending population to Redis DB:" << std::endl;
-        eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS>>& mainPop = pop;
+        eoPop<GlyfadaMoeoRealVector<N_TRAITS>>& mainPop = pop;
         for (size_t i = 0; i < mainPop.size(); ++i) {
             std::ostringstream oss;
             mainPop[i].printOn(oss);  // Assuming printOn is defined for the individual type
@@ -1342,11 +1345,11 @@ int main(int argc, char *argv[]) {
         if (manager->getIsMainInstance()) {
             auto retrievedPop = manager->retrievePopulation(POP_SIZE);
             std::cout << "Retrieved population size: " << retrievedPop.size() << std::endl;
-            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > (retrievedPop);
+            pop = SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS> > > (retrievedPop);
         }
     }
 
-    moeoUnboundedArchive<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > arch;
+    moeoUnboundedArchive<GlyfadaMoeoRealVector<N_TRAITS> > arch;
 
     std::map<std::string, double> parameters = {
         {"popSize", POP_SIZE},
@@ -1377,8 +1380,8 @@ int main(int argc, char *argv[]) {
             DEBUG_MSG << "Main instance: Writing the archive to files." << std::endl;
         }
         for (int i = 1; i < comm.size(); ++i) {
-            eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > popUnpacked0(POP_SIZE, init);
-            SerializableBase<eoPop<GlyfadaMoeoRealVector<N_OBJECTIVES, N_TRAITS> > > popUnpacked(popUnpacked0);
+            eoPop<GlyfadaMoeoRealVector<N_TRAITS> > popUnpacked0(POP_SIZE, init);
+            SerializableBase<eoPop<GlyfadaMoeoRealVector<N_TRAITS> > > popUnpacked(popUnpacked0);
             DEBUG_MSG << "Master: Waiting to receive population from worker " << i << "." << std::endl;
             comm.recv(i, eo::mpi::Channel::Messages, popUnpacked);
             DEBUG_MSG << "Master: Received population from worker " << i << "." << std::endl;

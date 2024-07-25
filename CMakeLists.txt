@@ -84,6 +84,7 @@ set(SOURCE_FILES
 		${PARADISEO_ROOT}/eo/src/serial/Parser.cpp
 		${PARADISEO_ROOT}/eo/src/serial/SerialArray.cpp
 		${PARADISEO_ROOT}/eo/src/serial/SerialString.cpp
+		${PARADISEO_ROOT}/moeo/src/core/moeoObjectiveVectorTraits.cpp
 		mpi/SerializableBase.h
 		mpi/schema.cpp
 		mpi/xml_parser.cpp
