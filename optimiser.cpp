@@ -108,6 +108,7 @@ public:
     }
 };
 
+
 // Global vectors to store all evaluated solutions and their corresponding generations
 // TODO: re-enable all solutions
 std::vector<GlyfadaMoeoRealVector> allEvaluatedSolutions;
@@ -157,7 +158,7 @@ public:
             // Check if the average evaluation time is below the limit and we have enough evaluations
             if ((total_evaluation_time / evaluation_count < evaluation_minimal_time) && (evaluation_count > 10)) {
                 ERROR_MSG << "Error: Average evaluation time below " << evaluation_minimal_time << " seconds after " << evaluation_count << " evaluations." << std::endl;
-                exit(999);
+                exit(EXIT_FAILURE);
             } else if (elapsed < evaluation_minimal_time) {
                 std::stringstream warnMsgStream;
                 warnMsgStream << "Warning: Evaluation completed in less than " << evaluation_minimal_time << " seconds. Parameters for this evaluation: ";
