@@ -52,7 +52,7 @@ using namespace eo::mpi;
 //using namespace glyfada_parallel;
 namespace fs = std::filesystem;
 
-constexpr unsigned int N_OBJECTIVES = 3;
+//constexpr unsigned int N_OBJECTIVES = 3;
 constexpr unsigned int N_TRAITS = 8;
 
 typedef std::vector<double> (*EvalFunction)(
@@ -124,14 +124,13 @@ public:
                const std::string &single_category_parameters, const std::string &program_directory,
                const std::string &program_file, const std::string &config_file,
                const std::vector<std::string> &dependency_files,
-               int islandId = -1, int timeout_seconds = 60 * 30, int evaluation_minimal_time = 15)
+               int n_objectives = 1, int islandId = -1, int timeout_seconds = 60 * 30, int evaluation_minimal_time = 15)
         : evaluator(evaluator), source_command(source_command), parameter_names(parameter_names),
           single_category_parameters(single_category_parameters),
           program_directory(program_directory), program_file(program_file), config_file(config_file),
-          dependency_files(
-              const_cast<vector<std::string> &>(dependency_files)), islandId(islandId), timeout_seconds(timeout_seconds),
-          evaluation_minimal_time(evaluation_minimal_time), total_evaluation_time(0), evaluation_count(0) {
-    }
+          dependency_files(const_cast<vector<std::string> &>(dependency_files)), n_objectives(n_objectives),
+          islandId(islandId), timeout_seconds(timeout_seconds), evaluation_minimal_time(evaluation_minimal_time),
+          total_evaluation_time(0), evaluation_count(0) {}
 
     void operator()(GlyfadaMoeoRealVector<N_TRAITS> &_vec) override {
         if (_vec.invalidObjectiveVector()) {
@@ -196,7 +195,7 @@ public:
                     << ", Nested Parallelism: " << (isNested ? "Enabled" : "Disabled") << std::endl;
 
             // Set the objectives based on the results from run_g4beamline or run_cosy
-            for (size_t i = 0; i < N_OBJECTIVES; ++i) {
+            for (size_t i = 0; i < n_objectives; ++i) {
                 objVec[i] = results[i];
             }
 
@@ -219,6 +218,7 @@ private:
     std::string program_file;
     std::string config_file;
     std::vector<std::string> &dependency_files;
+    int n_objectives;
     int islandId;
     int timeout_seconds;
     int evaluation_minimal_time;
@@ -454,6 +454,9 @@ int main(int argc, char *argv[]) {
     auto EVALUATION_MINIMAL_TIME = get_json_value<unsigned int>(json_data, "timein_seconds", this_partition, 15);
     auto SOURCE_COMMAND = get_json_value<std::string>(json_data, "source_command", this_partition, "");
     auto PRINT_ALL_RESULTS = get_json_value<bool>(json_data, "print_all_results", this_partition, false);
+
+    auto n_objectives = get_json_value<unsigned int>(json_data, "n_objectives", this_partition, 3);
+    INFO_MSG << "Number of objectives: " << n_objectives << std::endl;
 
     bool interactive_mode = json_data.value("interactive_mode", false);
     // modes: multistart, homogeneous
@@ -869,8 +872,8 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    std::vector<bool> minimize(N_OBJECTIVES, false);  // false for maximization
-    moeoObjectiveVectorTraits::setup(N_OBJECTIVES, minimize);
+    std::vector<bool> minimize(n_objectives, false);  // false for maximization
+    moeoObjectiveVectorTraits::setup(n_objectives, minimize);
 
     EvalFunction evalFunc;
     std::unordered_map<std::string, EvalFunction> evaluatorMap = {
@@ -981,7 +984,7 @@ int main(int argc, char *argv[]) {
     if (mode == "multistart") {
         // objective functions evaluation
         SystemEval<N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                program_directory, program_file, config_file, dependency_files);
+                                                program_directory, program_file, config_file, dependency_files, n_objectives);
 
         eoRealVectorBounds bounds(min_values, max_values);
         eoSBXCrossover<GlyfadaMoeoRealVector<N_TRAITS> > xover(ETA_C);
@@ -1054,7 +1057,7 @@ int main(int argc, char *argv[]) {
         }
 
         SystemEval<N_TRAITS> eval1(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                 program_directory, program_file, config_file, dependency_files, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
+                                   program_directory, program_file, config_file, dependency_files, n_objectives, 1, 60 * TIMEOUT_MINUTES, EVALUATION_MINIMAL_TIME);
 
         // LS
         std::vector<unsigned int> minScalingExplored = {1, 2, 3};
@@ -1312,7 +1315,7 @@ int main(int argc, char *argv[]) {
 
         // objective functions evaluation
         SystemEval<N_TRAITS> eval(evalFunc, SOURCE_COMMAND, parameter_names, single_category_parameters,
-                                                program_directory, program_file, config_file, dependency_files);
+                                                program_directory, program_file, config_file, dependency_files, n_objectives);
 
         eoRealVectorBounds bounds(min_values, max_values);
         eoSBXCrossover<GlyfadaMoeoRealVector<N_TRAITS> > xover(ETA_C);
@@ -1409,7 +1412,7 @@ int main(int argc, char *argv[]) {
         writeParametersToCsv(csv_file, parameters, parameter_names, single_category_parameters);
         for (unsigned i = 0; i < arch.size(); ++i) {
             // Writing objective function values
-            for (unsigned j = 0; j < N_OBJECTIVES; ++j) {
+            for (unsigned j = 0; j < n_objectives; ++j) {
                 csv_file << arch[i].objectiveVector()[j] << ",";
             }
             // Writing solution parameter vectors
@@ -1437,7 +1440,7 @@ int main(int argc, char *argv[]) {
         writeParametersToCsv(all_solutions_file, parameters, parameter_names, single_category_parameters);
         for (unsigned i = 0; i < allEvaluatedSolutions.size(); ++i) {
             // Writing objective function values
-            for (unsigned j = 0; j < N_OBJECTIVES; ++j) {
+            for (unsigned j = 0; j < n_objectives; ++j) {
                 all_solutions_file << allEvaluatedSolutions[i].objectiveVector()[j] << ",";
             }
             // Writing solution parameter vectors
