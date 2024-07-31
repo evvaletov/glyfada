@@ -53,7 +53,7 @@ using namespace eo::mpi;
 namespace fs = std::filesystem;
 
 //constexpr unsigned int N_OBJECTIVES = 3;
-constexpr unsigned int N_TRAITS = 8;
+//constexpr unsigned int N_TRAITS = 8;
 
 typedef std::vector<double> (*EvalFunction)(
     const std::string &,
@@ -128,13 +128,13 @@ public:
           program_directory(program_directory), program_file(program_file), config_file(config_file),
           dependency_files(const_cast<vector<std::string> &>(dependency_files)), n_objectives(n_objectives),
           islandId(islandId), timeout_seconds(timeout_seconds), evaluation_minimal_time(evaluation_minimal_time),
-          total_evaluation_time(0), evaluation_count(0), n_traits(parameter_names.size()) {}
+          total_evaluation_time(0), evaluation_count(0) {}
 
     void operator()(GlyfadaMoeoRealVector &_vec) override {
         if (_vec.invalidObjectiveVector()) {
             GlyfadaMoeoObjectiveVector objVec;
-            vector<double> parameter_values(n_traits); // use dimension() here instead of size()
-            for (size_t i = 0; i < n_traits; ++i) // use dimension() here instead of size()
+            vector<double> parameter_values(_vec.size());
+            for (size_t i = 0; i < _vec.size(); ++i)
             {
                 parameter_values[i] = _vec[i];
                 // std::cout << "parameter_values[" << i << "] = " << parameter_values[i] << std::endl;
@@ -162,9 +162,9 @@ public:
             } else if (elapsed < evaluation_minimal_time) {
                 std::stringstream warnMsgStream;
                 warnMsgStream << "Warning: Evaluation completed in less than " << evaluation_minimal_time << " seconds. Parameters for this evaluation: ";
-                for (size_t i = 0; i < n_traits; ++i) {
+                for (size_t i = 0; i < parameter_names.size(); ++i) {
                     warnMsgStream << parameter_names[i] << ": " << parameter_values[i];
-                    if (i < n_traits - 1) warnMsgStream << ", ";
+                    if (i < parameter_names.size() - 1) warnMsgStream << ", ";
                 }
                 WARN_MSG << warnMsgStream.str() << std::endl;
             }
@@ -217,7 +217,7 @@ private:
     std::string config_file;
     std::vector<std::string> &dependency_files;
     int n_objectives;
-    int n_traits;
+    //int n_traits;
     int islandId;
     int timeout_seconds;
     int evaluation_minimal_time;
@@ -998,7 +998,7 @@ int main(int argc, char *argv[]) {
     } else if (mode == "MPI" or mode == "redis")  {
         if (mode == "redis") {
             if (redisUseInitJob) {
-//TODO: test this
+                //TODO: test this
                 std::stringstream msgStream;
                 INFO_MSG << "Initialising from redis job ID: " << redisInitJobID << std::endl;
                 auto manager0 = RedisManager<GlyfadaMoeoRealVector>::getInstance(redisIP, redisPort, redisPassword, redisInitJobID, (redisMaxPopSize > 0 ? redisMaxPopSize : POP_SIZE));
@@ -1008,22 +1008,40 @@ int main(int argc, char *argv[]) {
                 auto retrievedPop = manager0->retrieveEntirePopulation();
                 INFO_MSG << "Retrieved population size: " << retrievedPop.size() << std::endl;
 
+                // Determine the size of individual vectors
+                size_t individualSize = 0;
+                if (!default_values_vector.empty()) {
+                    individualSize = default_values_vector[0].size();
+                } else if (!retrievedPop.empty()) {
+                    individualSize = retrievedPop[0].size();
+                }
+
+                // Check for size mismatch only if both vectors are non-empty
+                if (!default_values_vector.empty() && !retrievedPop.empty() &&
+                    default_values_vector[0].size() != retrievedPop[0].size()) {
+                    ERROR_MSG << "Error: Size mismatch between default_values_vector and retrievedPop." << std::endl;
+                    return EXIT_FAILURE;
+                }
+
                 // Determine total desired population size considering both retrieved population and local default values
                 size_t totalDesiredSize = retrievedPop.size() + default_values_vector.size();
                 size_t N = std::min(static_cast<size_t>(POP_SIZE), totalDesiredSize);
-
+                size_t startIndex = 0;
                 INFO_MSG << "Population to set: N = min(" << POP_SIZE << ", " << totalDesiredSize << ") = " << N << std::endl;
 
-                // Resize default_values_vector to accommodate up to N individuals
-                default_values_vector.resize(N, std::vector<double>(N_TRAITS));
+                // If both vectors are empty, we don't need to do anything with default_values_vector
+                if (!default_values_vector.empty() || !retrievedPop.empty()) {
+                    // Resize default_values_vector to accommodate up to N individuals
+                    default_values_vector.resize(N, std::vector<double>(individualSize));
 
-                // Determine the start index in default_values_vector where retrieved population values should be placed
-                size_t startIndex = std::max(0, static_cast<int>(N) - static_cast<int>(retrievedPop.size()));
+                    // Determine the start index in default_values_vector where retrieved population values should be placed
+                    startIndex = std::max(0, static_cast<int>(N) - static_cast<int>(retrievedPop.size()));
 
-                // Fill in values from the retrieved population with the necessary shift
-                for (size_t i = 0; i < retrievedPop.size() && (startIndex + i) < N; ++i) {
-                    for (size_t j = 0; j < N_TRAITS; ++j) {
-                        default_values_vector[startIndex + i][j] = retrievedPop[i][j];
+                    // Fill in values from the retrieved population with the necessary shift
+                    for (size_t i = 0; i < retrievedPop.size() && (startIndex + i) < N; ++i) {
+                        for (size_t j = 0; j < individualSize; ++j) {
+                            default_values_vector[startIndex + i][j] = retrievedPop[i][j];
+                        }
                     }
                 }
 
@@ -1415,9 +1433,9 @@ int main(int argc, char *argv[]) {
                 csv_file << arch[i].objectiveVector()[j] << ",";
             }
             // Writing solution parameter vectors
-            for (unsigned j = 0; j < N_TRAITS; ++j) {
+            for (unsigned j = 0; j < arch[i].size(); ++j) {
                 csv_file << arch[i][j];
-                if (j != N_TRAITS - 1) {
+                if (j != arch[i].size() - 1) {
                     csv_file << ",";
                 }
             }
@@ -1443,9 +1461,9 @@ int main(int argc, char *argv[]) {
                 all_solutions_file << allEvaluatedSolutions[i].objectiveVector()[j] << ",";
             }
             // Writing solution parameter vectors
-            for (unsigned j = 0; j < N_TRAITS; ++j) {
+            for (unsigned j = 0; j < allEvaluatedSolutions[i].size(); ++j) {
                 all_solutions_file << allEvaluatedSolutions[i][j];
-                if (j != N_TRAITS - 1) {
+                if (j != allEvaluatedSolutions[i].size() - 1) {
                     all_solutions_file << ",";
                 }
             }
