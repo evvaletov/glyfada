@@ -323,18 +323,6 @@ int main(int argc, char *argv[]) {
     eoParser parser(argc, argv, "Glyfada"); // for user-parameter reading
     //eoState state; // to keep all things allocated
 
-    eoValueParam<std::string> interactiveParam("", "interactive", "Interactive mode override", 'i', false);
-    parser.processParam(interactiveParam, "Execution");
-
-    // Debug information to check the value obtained from the command line
-    if (parser.isItThere(interactiveParam)) {
-        std::string interactiveCmdValue = interactiveParam.value();
-        DEBUG_MSG << "Interactive mode parameter from command line: " << interactiveCmdValue << std::endl;
-    } else {
-        DEBUG_MSG << "Interactive mode parameter not provided in command line, default value will be used." <<
-                std::endl;
-    }
-
     // Define a command-line parameter for configuration file
     eoValueParam<std::string> configFileParam("", "config", "Path to configuration file", 'c', true);
     parser.processParam(configFileParam, "General");
@@ -457,7 +445,6 @@ int main(int argc, char *argv[]) {
     auto n_objectives = get_json_value<unsigned int>(json_data, "n_objectives", this_partition, 3);
     INFO_MSG << "Number of objectives: " << n_objectives << std::endl;
 
-    bool interactive_mode = json_data.value("interactive_mode", false);
     // modes: multistart, homogeneous
     std::string mode = json_data.value("mode", "multistart");
     INFO_MSG << "Operation mode set to: " << mode << std::endl;
@@ -556,18 +543,6 @@ int main(int argc, char *argv[]) {
         INFO_MSG << "Redis use init job: " << (redisUseInitJob ? "Yes" : "No") << std::endl;
         INFO_MSG << "Redis max population size = " << redisMaxPopSize << std::endl;
         INFO_MSG << "Redis write all: " << (redisWriteAll ? "Enabled" : "Disabled") << std::endl;
-    }
-
-    // Check if interactive mode parameter was provided in command line
-    if (parser.isItThere(interactiveParam)) {
-        auto interactiveCmd = parser.valueOf<std::string>("interactive");
-        if (interactiveCmd == "true" || interactiveCmd == "on") {
-            interactive_mode = true;
-            DEBUG_MSG << "Interactive mode set to ON based on command line argument." << std::endl;
-        } else if (interactiveCmd == "false" || interactiveCmd == "off") {
-            interactive_mode = false;
-            DEBUG_MSG << "Interactive mode set to OFF based on command line argument." << std::endl;
-        }
     }
 
     // Initialize default values
@@ -864,7 +839,7 @@ int main(int argc, char *argv[]) {
 
     default_values_vector.push_back(default_values);
 
-    INFO_MSG << "Single-category parameters: " << single_category_parameters << std::endl;
+    INFO_MSG << "Single-category parameters: " << (single_category_parameters.empty() ? "none" : single_category_parameters) << std::endl;
 
     //if (N_TRAITS != parameter_names.size()) {
     //    ERROR_MSG << "ERROR: The number of parameters does not match the number of EO optimizer traits" << std::endl;
@@ -887,48 +862,6 @@ int main(int argc, char *argv[]) {
         // Handle error condition
         std::cerr << "Unknown evaluator: " << EVALUATOR << "\n";
         return EXIT_FAILURE;
-    }
-
-    INFO_MSG << "Interactive mode: " << (interactive_mode ? "true" : "false") << "\n";
-    if (interactive_mode) {
-        // Print parameters
-        std::cout << "Parameters:\n";
-        std::cout << "POP_SIZE: " << POP_SIZE << "\n";
-        std::cout << "MAX_GEN: " << MAX_GEN << "\n";
-        std::cout << "MAX_TIME: " << MAX_TIME << "\n";
-        std::cout << "RUN_LIMIT_TYPE: " << RUN_LIMIT_TYPE << "\n";
-        std::cout << "NSGAII_M_EPSILON: " << M_EPSILON << "\n";
-        std::cout << "NSGAII_P_CROSS: " << P_CROSS << "\n";
-        std::cout << "NSGAII_P_MUT: " << P_MUT << "\n";
-        std::cout << "NSGAII_ETA_C: " << ETA_C << "\n";
-        std::cout << "NSGAII_SIGMA: " << SIGMA << "\n";
-        std::cout << "NSGAII_P_CHANGE: " << P_CHANGE << "\n";
-        std::cout << "MIGRATION_PERIOD: " << MIGRATION_PERIOD << "\n";
-        std::cout << "TOURNAMENT_SIZE: " << TOURNAMENT_SIZE << "\n";
-        std::cout << "SELECTION_NUMBER: " << SELECTION_NUMBER << "\n";
-        std::cout << "Evaluator: " << EVALUATOR << "\n";
-        std::cout << "Algorithm: " << ALGORITHM_STR << "\n";
-        std::cout << "Source command: " << SOURCE_COMMAND << "\n";
-        std::cout << "Program file: " << program_file << "\n";
-        std::cout << "Config file: " << config_file << "\n";
-        std::cout << "Parse DeepHyper model: " << parse_dh_model << "\n";
-        if (parse_dh_model) std::cout << "DeepHyper model filename: " << dh_model_filename << "\n";
-        std::cout << "Print all results: " << PRINT_ALL_RESULTS << "\n";
-        std::cout << "Program directory: " << program_directory << "\n";
-        for (unsigned i = 0; i < parameter_names.size(); ++i) {
-            std::cout << "Parameter " << parameter_names[i] << ": min = " << min_values[i] << ", max = " << max_values[
-                i] << "\n";
-        }
-        std::cout << "Single category parameters: " << single_category_parameters << "\n";
-
-        // Ask for user confirmation
-        std::string input;
-        std::cout << "Do you want to proceed with these parameters? (yes/no)\n";
-        std::getline(std::cin, input);
-        if (input != "yes") {
-            std::cout << "Aborted.\n";
-            return EXIT_FAILURE; // or however you want to handle aborting the program
-        }
     }
 
     // crossover and mutation
