@@ -13,7 +13,7 @@ std::vector<double> run_dh(const std::string& source_command, const std::string&
                              const std::vector<std::string>& parameter_names,
                              const std::vector<double>& parameter_values,
                              const std::string& single_category_parameters,
-                             int timeout_seconds = TIMEOUT_SECONDS);
+                             int n_objectives, int timeout_seconds = TIMEOUT_SECONDS);
 
 #endif // RUN_DH_H
 

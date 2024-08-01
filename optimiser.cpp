@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstdio>
 #include <moeo>
 #include <es/eoRealInitBounded.h>
 #include <es/eoRealOp.h>
@@ -64,7 +64,7 @@ typedef std::vector<double> (*EvalFunction)(
     const std::vector<std::string> &,
     const std::vector<double> &,
     const std::string &,
-    int);
+    int, int);
 
 // the moeoObjectiveVectorTraits
 /*template<int N_OBJECTIVES>
@@ -145,7 +145,7 @@ public:
             // Call the evaluator function
             std::vector<double> results = evaluator(source_command, program_directory, program_file, config_file,
                                                     dependency_files, parameter_names,
-                                                    parameter_values, single_category_parameters, timeout_seconds);
+                                                    parameter_values, single_category_parameters, n_objectives, timeout_seconds);
 
             auto end = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();

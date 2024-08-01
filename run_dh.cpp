@@ -92,7 +92,7 @@ std::vector<double> exec(const std::string &cmd, int n) {
             return std::vector<double>(n, -10000.0);
         } else if (firstChar == 'Q') {
             // Handle COSY INFINITY program QUIT
-            ERROR_MSG << "Failed evaluation (COSY INFINITY program QUIT) - " << result << std::endl;
+            ERROR_MSG << "Failed evaluation (simulation program quit) - " << result << std::endl;
             return std::vector<double>(n, -10000.0);
         } else if (firstChar == 'S') {
             // Handle missing summary file
@@ -205,7 +205,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
                            const std::vector<std::string> &dependency_files,
                            const std::vector<std::string> &parameter_names,
                            const std::vector<double> &parameter_values, const std::string &single_category_parameters,
-                           int timeout_seconds) {
+                           int n_objectives = 3, int timeout_seconds) {
     bool debug = false;
     int max_retries = 3; // Maximum number of retries if the file is modified during evaluation
     int retry_count = 0;
@@ -253,7 +253,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
 
     // Function to perform the evaluation
     auto evaluate = [&]() {
-        results = exec(python_command, 3);
+        results = exec(python_command, n_objectives);
 
         // Check the last modification time after the execution
         std::filesystem::file_time_type lastWriteTimeAfter = getLastWriteTime(fullPath);
@@ -265,7 +265,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
 
     if (debug) {
         std::cout << "Debug mode: " << python_command << std::endl;
-        results = exec(python_command, 3);
+        results = exec(python_command, n_objectives);
 
         // Print the entire results vector
         std::cout << "Results vector: [";
@@ -290,7 +290,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
                         DEBUG_MSG << "Program file was modified during evaluation." << std::endl;
                         if (++retry_count >= max_retries) {
                             ERROR_MSG << "Program file is being modified continuously. Maximum retries reached. Aborting." << std::endl;
-                            return std::vector<double>(3, -10000.0);
+                            return std::vector<double>(n_objectives, -10000.0);
                         }
                         // Update last write time before retrying
                         lastWriteTimeBefore = getLastWriteTime(fullPath);
@@ -317,7 +317,7 @@ std::vector<double> run_dh(const std::string &source_command, const std::string 
             DEBUG_MSG << msgStream.str() << std::endl;
         } catch (const std::exception &e) {
             ERROR_MSG << "Error executing command: " << e.what() << std::endl;
-            return std::vector<double>(3, -10000.0);
+            return std::vector<double>(n_objectives, -10000.0);
         }
     }
 
