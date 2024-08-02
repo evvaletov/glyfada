@@ -54,6 +54,7 @@ namespace fs = std::filesystem;
 
 //constexpr unsigned int N_OBJECTIVES = 3;
 //constexpr unsigned int N_TRAITS = 8;
+constexpr double PADDING_VALUE = -10000.0;
 
 typedef std::vector<double> (*EvalFunction)(
     const std::string &,
@@ -157,16 +158,36 @@ public:
 
             // Check if the average evaluation time is below the limit and we have enough evaluations
             if ((total_evaluation_time / evaluation_count < evaluation_minimal_time) && (evaluation_count > 10)) {
-                ERROR_MSG << "Error: Average evaluation time below " << evaluation_minimal_time << " seconds after " << evaluation_count << " evaluations." << std::endl;
+                ERROR_MSG << "Average evaluation time below " << evaluation_minimal_time << " seconds after " << evaluation_count << " evaluations." << std::endl;
                 exit(EXIT_FAILURE);
             } else if (elapsed < evaluation_minimal_time) {
                 std::stringstream warnMsgStream;
-                warnMsgStream << "Warning: Evaluation completed in less than " << evaluation_minimal_time << " seconds. Parameters for this evaluation: ";
+                warnMsgStream << "Evaluation completed in less than " << evaluation_minimal_time << " seconds. Parameters for this evaluation: ";
                 for (size_t i = 0; i < parameter_names.size(); ++i) {
                     warnMsgStream << parameter_names[i] << ": " << parameter_values[i];
                     if (i < parameter_names.size() - 1) warnMsgStream << ", ";
                 }
                 WARN_MSG << warnMsgStream.str() << std::endl;
+            }
+
+            if (results.size() != n_objectives) {
+                mismatch_count++;
+                std::stringstream warnMsgStream;
+                warnMsgStream << "Mismatch between results vector size (" << results.size()
+                              << ") and n_objectives (" << n_objectives << "). Mismatch count: " << mismatch_count;
+                WARN_MSG << warnMsgStream.str() << std::endl;
+                if (mismatch_count > 10) {
+                    ERROR_MSG << "Mismatch count exceeded 10. Exiting program." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                // Pad the results vector if it's shorter than n_objectives
+                if (results.size() < n_objectives) {
+                    results.resize(n_objectives, PADDING_VALUE);
+                    warnMsgStream.str("");
+                    warnMsgStream << "Results vector padded with " << PADDING_VALUE
+                                  << " to match n_objectives (" << n_objectives << ")";
+                    WARN_MSG << warnMsgStream.str() << std::endl;
+                }
             }
 
             std::stringstream msgStream;
@@ -223,6 +244,7 @@ private:
     int evaluation_minimal_time;
     long long total_evaluation_time;
     int evaluation_count;
+    int mismatch_count;
 };
 
 // TODO DONE: check if in eoNormalVecMutation the sigma argument scaled by the range: yes

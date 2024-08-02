@@ -150,7 +150,7 @@ std::vector<double> exec(const std::string &cmd, int n) {
                     << "Expected number of objectives: " << n << "\n"
                     << "Found number of objectives: " << results.size() << "\n"
                     << "JSON output: " << j.dump(4) << std::endl; // Pretty print JSON
-            return std::vector<double>(n, -10000.0);
+            return std::vector<double>(results.size(), -10000.0);
         }
     }
 
